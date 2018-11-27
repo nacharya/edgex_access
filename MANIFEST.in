@@ -1,0 +1,8 @@
+include *.md
+include LICENSE
+
+# Don't package GitHub-specific files.
+exclude *.md .travis.yml
+
+recursive-include docs/*.txt *.py
+include docs/*.txt
