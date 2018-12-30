@@ -1,14 +1,15 @@
-# edgex_pyconnector
+# edgex_access
 
 ## What is edgex_access
 
-Edge-X Python connector library for NexentaEdge and AWS using the S3 protocol 
+A Python3 connector library that uses the AWS S3 protocol to access data storage 
+solutions like AWS S3, NexentaEdge, Minio, Scality Zenko and Cloudian S3
 
 - S3 configuration for more than one S3 store
 - signature computation based on configuration
 - S3 URI access for GET,PUT, DELETE
 
-### edgex_config
+### EdgexConfig
 
 Read in the configuration for accessing various S3 stores and 
 other local data stores
@@ -17,10 +18,10 @@ other local data stores
 ```python
 
 from os.path import expanduser
-from edgex_access import edgex_config
+from edgex_access import EdgexConfig
 
 cfg_file = expanduser("~") + /.mys3config
-edgex_cfg = edgex_config()
+edgex_cfg = EdgexConfig()
 try:
 	edgex_cfg.load_file(cfg_file)
 except:
@@ -28,9 +29,9 @@ except:
 
 ```
 
-### edgex_store
+### EdgexStore
 
-Each S3 store is represented as a edgex_store, so once the confuration is read,
+Each S3 store is represented as a EdgexStore, so once the confuration is read,
 all the store instances are available
 
 The configuration as a store marked as a primary S3 store. 

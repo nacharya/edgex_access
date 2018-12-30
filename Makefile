@@ -1,12 +1,12 @@
 PYTHON=python
 
 MODULE = edgex_access
-VERSION = 0.0.13
-S3EDGE = s3edge
+VERSION = 0.0.14
+SP3 = sp3
 SOURCES = $(MODULE)/$(MODULE).py
 SETUP = setup.py
-DOCS = docs/source/$(MODULE).rst docs/source/s3edgex.rst
-SCRIPTS = s3edgex/s3edgex
+DOCS = docs/source/$(MODULE).rst docs/source/sp3.rst
+SCRIPTS = sp3/sp3
 READMES = README.md LICENSE
 TESTLOG = testlog.log
 REQ = requirements.txt

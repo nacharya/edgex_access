@@ -2,7 +2,7 @@
 #
 
 PYTHON=python
-S3E=s3edgex
+SP3=sp3
 
 all: utests
 
