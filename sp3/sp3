@@ -126,10 +126,10 @@ async def parse_cmd_1(cfg, args):
         objname = args[0]
     try:
         if local_obj:
-            store = cfg.get_local_pwd()
+            store = cfg.get_pwd_store()
         else:
             store = None
-        edgex_obj = EdgexObject(cfg, objname, store=store, as_is=local_obj)
+        edgex_obj = EdgexObject(cfg, objname, store=store)
 
         logger.debug(str(edgex_obj.pathname() + "\t" + "-r: " + str(recursive)))
         logger.debug(str(edgex_obj.bucketname() + "\t" + edgex_obj.objname() \
@@ -173,7 +173,7 @@ async def parse_cmd_2(cfg, args):
     try:
         first_obj = EdgexObject(cfg, first_objname)
         if local_obj:
-            store = cfg.get_local_pwd()
+            store = cfg.get_pwd_store()
         else:
             store = None
         second_obj = EdgexObject(cfg, second_objname, store=store, \
@@ -269,7 +269,7 @@ async def parse_cmd_gend(cfg, args):
     vdb_file = args[2]
     try:
         if local_obj:
-            store = cfg.get_local_pwd()
+            store = cfg.get_pwd_store()
         else:
             store = None
         if not start_obj_name.endswith("/"):

@@ -3,10 +3,11 @@
 """
 # Placed at the top as suggested by pylint
 from xml.etree.ElementTree import fromstring as parse_xml, ParseError
-
 import json
 import os
 import hashlib
+import random
+
 from datetime import datetime
 import async_timeout
 import aiofiles
@@ -14,17 +15,13 @@ import aiofiles
 from sqlitedict import SqliteDict
 from logzero import logger
 
-
 ACCESS_LOG_FILE = "edgex_access"
 MAX_SINGLE_OBJ = 5* 1024 * 1024 * 1024 # 5Gb
 
-
 #Error objects, Exceptions etc
 #============================================================================
-
 class EdgexException(Exception):
     """Base for exceptions returned by S3 servers"""
-
     @staticmethod
     def from_bytes(status, body):
         """
@@ -46,7 +43,6 @@ class EdgexException(Exception):
             raise RuntimeError("Error {} is unknown".format(class_name))
         msg = xml.find("Message")
         return cls(class_name if msg is None else msg.text)
-
 
 class AccessDenied(EdgexException):
     """Access is Denied"""
@@ -354,7 +350,7 @@ class EdgexStoreBase:
         """ Get the named default bucket """
         return self.bucket
 
-class EdgexFSAccess(EdgexStoreBase):
+class EdgexFSStore(EdgexStoreBase):
     """ Stuff needed to access the local filesystem
     """
     def __init__(self, cfg):
@@ -367,7 +363,7 @@ class EdgexFSAccess(EdgexStoreBase):
         """ Get the endpoint """
         return self.basename()
 
-class EdgexS3Access(EdgexStoreBase):
+class EdgexS3Store(EdgexStoreBase):
     """ Security credentials to access the
         store
     """
@@ -386,14 +382,26 @@ class EdgexS3Access(EdgexStoreBase):
     def get_secret(self):
         return self.secret
 
+class EdgexMemStore(EdgexStoreBase):
+    """ store stuff in memory for small things """
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.bucketname = cfg['BUCKET']
+    def get_bucketname(self):
+        """ the mem space is denoted by a bucket name """
+        return self.bucketname
+
+
 class EdgexStore:
     """ Specific description of each store """
 
     def __init__(self, cfg):
         if cfg['STORE_TYPE'] == "S3":
-            self.store = EdgexS3Access(cfg)
+            self.store = EdgexS3Store(cfg)
         elif cfg['STORE_TYPE'] == "FS":
-            self.store = EdgexFSAccess(cfg)
+            self.store = EdgexFSStore(cfg)
+        elif cfg['STORE_TYPE'] == "MEM":
+            self.store = EdgexMemStore(cfg)
         else:
             raise InvalidStore(cfg['STORE_TYPE'])
 
@@ -447,7 +455,11 @@ class EdgexConfig:
         if self.cfg_data['DATATEST']:
             self.datatest = self.cfg_data['DATATEST']
         if self.cfg_data['META']:
-            self.datatest = self.cfg_data['META']
+            self.meta = self.cfg_data['META']
+
+    def io_type(self):
+        """ whether this is sync or async """
+        return self.syncio
 
     def create(self, name, store_type, bucket, access="", secret="",\
             endpoint=None, region="", token="", tag=""):
@@ -458,7 +470,6 @@ class EdgexConfig:
         scfg['SECRET'] = secret
         scfg['REGION'] = region
         scfg['ENDPOINT'] = endpoint
-        scfg['USE_SSL'] = ""
         scfg['TOKEN'] = token
         scfg['TAG'] = tag
         scfg['NAME'] = name
@@ -466,20 +477,36 @@ class EdgexConfig:
 
         # jcfg = json.dumps(scfg)
         if store_type == "FS":
-            store = EdgexFSAccess(scfg)
+            store = EdgexFSStore(scfg)
         elif store_type == "S3":
-            store = EdgexFSAccess(scfg)
+            store = EdgexS3Store(scfg)
+        elif store_type == "MEM":
+            store = EdgexMemStore(scfg)
         else:
             raise InvalidStore(store_type)
 
         return store
 
+    def set_stores(self):
+        """ setup the pwd store and the in-memory store """
+        store = self.create("pwd", "FS", os.getcwd(), tag="file")
+        self.store_dict['pwd'] = store
+        store = self.create("mem", "MEM", str(os.getpid()), tag="mem")
+        self.store_dict['MEM'] = store
+
+    def get_pwd_store(self):
+        """ return a store corresponding to the pwd in local store """
+        return self.store_dict['pwd']
+
+    def get_mem_store(self):
+        """ return a store corresponding to the pwd in local store """
+        return self.store_dict['mem']
 
     def get_primary_store(self):
         """ the name of the primary store """
         if self.cfg_data['PRIMARY'] is None:
             raise RuntimeError("No Primary Store defined")
-        return self.store_dict[ self.cfg_data['PRIMARY']]
+        return self.store_dict[self.cfg_data['PRIMARY']]
 
     def get_meta_location(self):
         """ the location of metadata is chose to be stored """
@@ -499,7 +526,8 @@ class EdgexConfig:
         """ show me all the stores """
         for k in self.store_dict:
             store = self.store_dict[k]
-            logger.info("\t" + store.get_name() + "\t" + store.get_type() + "\t" + store.default_bucket())
+            logger.info(str("\t" + store.get_name() + "\t" + store.get_type() \
+                            + "\t" + store.default_bucket()))
 
     def get_stores(self):
         """ get the stores as a list """
@@ -516,14 +544,7 @@ class EdgexConfig:
             return store
         except Exception as exp:
             logger.exception(exp)
-            return None
-
-    # TODO: revise
-    def get_local_pwd(self):
-        """ return a store corresponding to the pwd in local store """
-        store = self.create("file", "FS", os.getcwd(), tag="file")
-        self.store_dict["file"] = store
-        return store
+            raise InvalidStore(store_name)
 
     def show_all(self):
         """ show all the stores """
@@ -533,19 +554,46 @@ class EdgexConfig:
         logger.info("stores:")
         self.show_stores()
 
+
+
+
 class EdgexObjectName:
     """ Only define the name string of the obeject and
         parse out the store, bucket, objname, if it is a
         folder etc from it
+        examples of names:
+
+        aws3://xenocloud/foo/bar
+            store is defined in the cfg as aws3 with all the credentials
+            bucketname is xenocloud and the path tp the object bar is /foo/bar
+
+        ix://mydir/foo/bar
+            store is defined in the config as ix, as a Filesystem path
+            bucket name ( folder name ) is mydir and the path to the file bar
+            is /foo/bar
+
+        The following two stes are automatically created and are not in the
+        config
+
+        mem://2324/stuff
+            store is an im-memory store for pid 2324. Object is stuff.
+
+        pwd://mydir/foo/bar
+            store is the present working directory. Folder is mydir
+            and the path to the object bar is /foo/bar
+
     """
     def __init__(self, name):
         self.oname = name
         self.objname = ""
         self.bucketname = ""
         self.storename = ""
-        rpath = ""
-        self.storename, rpath = self.parse_storename()
-        self.bucketname, self.objname = self.parse_bucketobject(rpath)
+        self.rpath = ""
+        self.storename, self.rpath = self.parse_storename()
+        self.bucketname, self.objname = self.parse_bucketobject()
+        logger.debug(str("Store: " + self.storename + "\tBucket: " \
+                         + self.bucketname + "\tObject: " \
+                         + self.objname))
 
     def parse_storename(self):
         """ returns the store name and the remaining path
@@ -565,17 +613,16 @@ class EdgexObjectName:
             raise InvalidStore("Store not defined: " + sname[0])
         return storename, rpath
 
-    def parse_bucketobject(self, bpath):
+    def parse_bucketobject(self):
         """ returns the bucketname, objectname """
-        bname = bpath.split("/")
+        bname = self.rpath.split("/")
         bucketname = ""
         objectname = ""
         if len(bname) > 1:
-            bucketname = bname[1]
-            objectname = "/".join(bname[2:])
-        else:
-            raise InvalidBucketName(bpath)
-        return bucketname, objectname
+            bucketname = bname[2]
+            objectname = "/".join(bname[3:])
+            return bucketname, objectname
+        raise InvalidBucketName(self.rpath)
 
     def isfolder(self):
         """ determine if this is a folder by the name only """
@@ -597,9 +644,7 @@ class EdgexObjectName:
 class EdgexObject:
     """ defines the main object as defined by the object name """
 
-    def __init__(self, cfg, name, store=None, as_is=False):
-        self.oname = name
-        self.as_is = as_is
+    def __init__(self, cfg, name, store=None):
         self.cfg = cfg
         # contains the databuffer on one task only. .. not the entire content-length.
         self.databuf = None
@@ -607,10 +652,7 @@ class EdgexObject:
         self.arg = None
         self.ctx = None
 
-        if self.localpath() is True:
-            return
-
-        # the entire thing
+        # the entire thing as the name says
         self.pjname = EdgexObjectName(name)
 
         # the object name only
@@ -621,23 +663,21 @@ class EdgexObject:
             self.store = store
         else:
             self.store = cfg.get_store(self.pjname.get_storename())
-
+            if self.store is None:
+                raise InvalidStore(store)
+        if self.store is None:
+            self.store = self.cfg.get_primary_store()
         if not self.bucket_name:
-            if self.store.get_type() != "FS":
-                logger.debug("No Bucket name")
-            elif self.store.get_type() == "FS":
-                self.bucket_name = self.store.default_bucket()
+            logger.debug("No Bucket name")
+            self.bucket_name = self.store.default_bucket()
 
         # time for the creation of this in-memory object
         tm_now = datetime.utcnow()
         self.amzdate = tm_now.strftime('%Y%m%dT%H%M%SZ')
         self.datestamp = tm_now.strftime('%Y%m%d') # Date w/o time, used in credential scope
 
-        logger.debug(str("OBJECT : " + self.pathname()))
+        logger.debug(str("OBJECT : " + self.pathname() + "\t" + str(self.datestamp)))
 
-        if self.store is None and self.as_is is False:
-            self.store = self.cfg.get_primary_store()
-            self.bucket_name = self.store.default_bucket()
 
     def isfolder(self):
         """ return of the entire object is a folder
@@ -650,18 +690,20 @@ class EdgexObject:
             return self.pjname.isfolder()
         if self.bucket_name:
             return self.bucket_name.endswith("/")
-
         return False
 
-    def localpath(self):
-        """ if this name is an entirely local pathname """
-        if self.as_is is True:
-            self.obj_name = self.oname
-            self.bucket_name = os.getcwd()
-            self.store = self.cfg.get_local_pwd()
-            return True
-        else:
-            return False
+    def islocal(self):
+        """ return if this is a local object """
+        if self.store == "FS":
+            return os.path.isdir(self.objname)
+        return False
+
+    def random_buffer(self):
+        """ Initialize this with a random buffer from 1K - 8K """
+        ksize = [1024, 2048, 4096, 8192]
+        size_sz = random.choice(ksize)
+        self.databuf = os.urandom(size_sz)
+
 
     def get_store(self):
         """ return the store for this object """
@@ -673,10 +715,7 @@ class EdgexObject:
 
     def bucketname(self):
         """ return the bucket name """
-        if self.bucket_name:
-            return self.bucket_name
-        else:
-            return self.store.default_bucket()
+        return self.bucket_name
 
     def objname(self):
         """ return the object name """
@@ -710,18 +749,14 @@ class EdgexObject:
             fpath = self.bucket_name + "/" + self.obj_name
         elif self.store_type() == "S3":
             fpath = self.store.get_endpoint() + "/" + self.bucket_name + "/" + self.obj_name
+        elif self.store_type() == "MEM":
+            fpath = self.bucket_name + "/" + self.obj_name
         else:
             logger.error(str("Error: store_type: " + self.store_type()))
             raise InvalidStore(str(self.store_type()))
         return fpath
 
-    def isobjlocal(self):
-        """ return if this is a local object """
-        if self.store == "FS":
-            return os.path.isdir(self.objname)
-        else: # could be local but has a store name
-            return self.islocal
-
+    # TODO: remove this later
     def auth(self):
         # auth = AWS4Auth(self.store.access, self.store.secret, self.store.region, 's3')
         auth = ""
@@ -738,13 +773,6 @@ class EdgexObject:
             raise InvalidStore(str(self.store_type()))
         childobj = EdgexObject(self.cfg, objname, store=self.store)
         return childobj
-
-    # Huh!?! Revise this
-    def makefolder(self):
-        """ make it look like a folder if it is not """
-        if not self.isfolder and self.oname.endswith("/"):
-            self.oname += "/"
-            #self.isfolder = True
 
 
 class EdgexMeta:
@@ -793,6 +821,248 @@ class EdgexMeta:
         if os.path.isfile(self.mname) is True:
             os.unlink(self.mname)
 
+class EdgexAccessBase:
+    """ Base class to access the I/O type. FS, S3 ,In-Mem etc """
+    def __init__(self, obj, atype):
+        self.obj = obj
+        self.type = atype
+    def get_type(self):
+        """ if this is S3, FS, MEM """
+        return self.type
+    def get_obj(self):
+        """ return the obj code """
+        return self.obj
+
+class EdgexMemAccess(EdgexAccessBase):
+    """ In-memory access """
+    def __init__(self, obj):
+        super().__init__(obj, "MEM")
+    async def list(self, session=None):
+        """ List the element in-memory """
+        pass
+    async def put(self, session=None):
+        """ put the databuf of the object in-memory """
+        pass
+    async def get(self, session=None):
+        """ get the databuf from in-memory """
+        if self.obj.databuf:
+            return self.obj.databuf
+        else:
+            raise InvalidDatabuffer(self.obj.pathname())
+        pass
+    async def delete(self, session=None):
+        """ delete the entry from in-memory """
+        pass
+    async def exists(self, session=None):
+        """ check of this exists in-memory """
+        pass
+    async def info(self, session=None):
+        """ return the meta info on this """
+        pass
+
+class EdgexS3Access(EdgexAccessBase):
+    """ S3 protocol access """
+    def __init__(self, obj):
+        super().__init__(obj, "S3")
+    async def list(self, session=None):
+        """ List the elements """
+        final_list = []
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                            aws_secret_access_key=self.obj.store.get_secret(), \
+                            aws_access_key_id=self.obj.store.get_access(), \
+                            endpoint_url=self.obj.store.get_endpoint()) as client:
+
+            prefix = self.obj.objname()
+            resp = await client.list_objects(Bucket=self.obj.bucketname(), \
+                                             Prefix=prefix, Delimiter='/')
+            retcode = resp['ResponseMetadata']['HTTPStatusCode']
+            if retcode != 200:
+                raise RuntimeError("HTTP Error {}".format(retcode))
+
+            if 'CommonPrefixes' in resp:
+                for r_x in resp['CommonPrefixes']:
+                    if prefix.endswith('/') and prefix and (prefix != r_x['Prefix']):
+                        final_list.append(r_x['Prefix'].replace(prefix, ''))
+                    elif not prefix:
+                        final_list.append(r_x['Prefix'])
+                    else:
+                        dlist = r_x['Prefix'].split('/')
+                        if dlist:
+                            if len(dlist[-1]) > 0:
+                                final_list.append(dlist[-1])
+                            elif len(dlist[-2]) > 0:
+                                final_list.append(dlist[-2])
+                        else:
+                            final_list.append(r_x['Prefix'])
+            elif 'Contents' in resp:
+                for r_x in resp['Contents']:
+                    if prefix.endswith('/') and prefix:
+                        final_list.append(r_x['Key'].replace(prefix, ''))
+                    else:
+                        dlist = r_x['Key'].split('/')
+                        if dlist:
+                            final_list.append(dlist[-1])
+                        else:
+                            final_list.append(r_x['Prefix'])
+            return final_list
+    async def put(self, session=None):
+        isdbuf = (self.obj.databuf is not None)
+        
+        logger.info(str("put " + self.obj.pathname() + \
+                        " databuf " + str(isdbuf)))
+        if not isdbuf:
+            try:
+                os.makedirs(os.path.dirname(self.obj.pathname()))
+            except Exception as exp:
+                logger.exception(exp)
+                raise exp
+            logger.error(str("No data buffer for " + self.obj.pathname()))
+            return self.obj.pathname()
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                                            aws_secret_access_key=self.obj.store.get_secret(), \
+                                            aws_access_key_id=self.obj.store.get_access(), \
+                                            endpoint_url=self.obj.store.get_endpoint()) as client:
+            try:
+                with async_timeout.timeout(10):
+                    await client.put_object(Bucket=self.obj.bucketname(), \
+                                                    Key=self.obj.objname(), \
+                                                    Body=self.obj.databuf)
+                return self.obj.pathname()
+            except Exception as exp:
+                logger.exception(exp)
+                raise exp
+
+    async def get(self, session=None):
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                                            aws_secret_access_key=self.obj.store.get_secret(), \
+                                            aws_access_key_id=self.obj.store.get_access(), \
+                                            endpoint_url=self.obj.store.get_endpoint()) as client:
+            try:
+                with async_timeout.timeout(10):
+                    gobj = await client.get_object(Bucket=self.obj.bucketname(),\
+                                                   Key=self.obj.objname())
+                    body = await gobj['Body'].read()
+                    gobj['Body'].close()
+                    return body
+            except Exception as exp:
+                logger.exception(exp)
+                raise exp
+
+    async def delete(self, session=None):
+        """ delete this object """
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                                        aws_secret_access_key=self.obj.store.get_secret(), \
+                                        aws_access_key_id=self.obj.store.get_access(), \
+                                        endpoint_url=self.obj.store.get_endpoint()) as client:
+            try:
+                del_obj = await client.delete_object(Bucket=self.obj.bucketname(), \
+                                                     Key=self.obj.objname())
+                retcode = del_obj['ResponseMetadata']['HTTPStatusCode']
+                return retcode in (200, 204)
+            except Exception as exp:
+                return False
+
+    async def exists(self, session):
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                                    aws_secret_access_key=self.obj.store.get_secret(), \
+                                    aws_access_key_id=self.obj.store.get_access(), \
+                                    endpoint_url=self.obj.store.get_endpoint()) as client:
+            try:
+                hd = await client.head_object(Bucket=self.obj.bucketname(),\
+                                              Key=self.obj.objname())
+                retcode = hd['ResponseMetadata']['HTTPStatusCode']
+                return retcode == 200
+            except:
+                return False
+
+    async def info(self, session=None):
+        async with session.create_client('s3', region_name=self.obj.store.get_region(), \
+                                    aws_secret_access_key=self.obj.store.get_secret(), \
+                                    aws_access_key_id=self.obj.store.get_access(), \
+                                    endpoint_url=self.obj.store.get_endpoint()) as client:
+            try:
+                hd = await client.head_object(Bucket=self.obj.bucketname(),\
+                                              Key=self.obj.objname())
+                retcode = hd['ResponseMetadata']['HTTPStatusCode']
+                if retcode == 200:
+                    return hd['ResponseMetadata']['HTTPHeaders']
+                else:
+                    return None
+            except Exception as exp:
+                return None
+
+
+class EdgexFSAccess(EdgexAccessBase):
+    def __init__(self, obj):
+        super().__init__(obj, "FS")
+
+    async def list(self, session=None):
+        final_list = []
+        if self.obj.isfolder():
+            final_list = os.listdir(self.obj.pathname())
+            print(final_list)
+            i = 0
+            for f_l in final_list:
+                if os.path.isdir(self.obj.pathname() + "/" + f_l):
+                    final_list[i] = f_l + "/"
+                i += 1
+        else:
+            if os.path.isfile(self.obj.pathname()):
+                final_list.append(self.obj.pathname())
+        return final_list
+
+    async def put(self, session=None):
+        isdbuf = (self.obj.databuf is not None)
+
+        logger.info(str("put " + self.obj.pathname() + " databuf " + str(isdbuf)))
+
+        if not isdbuf:
+            try:
+                os.makedirs(os.path.dirname(self.obj.pathname()))
+            except Exception as exp:
+                logger.exception(exp)
+                raise exp
+            logger.error(str("No data buffer for " + self.obj.pathname()))
+            return self.obj.pathname()
+        if not os.path.exists(os.path.dirname(self.obj.pathname())):
+            try:
+                os.makedirs(os.path.dirname(self.obj.pathname()))
+            except Exception as exp:
+                logger.exception(exp)
+                raise exp
+        async with aiofiles.open(self.obj.pathname(), mode='wb') as f_l:
+            await f_l.write(self.obj.databuf)
+            await f_l.flush()
+        return self.obj.pathname()
+
+    async def get(self, session=None):
+        file_size = os.stat(self.obj.pathname()).st_size
+        if file_size > MAX_SINGLE_OBJ:
+            raise EntityTooLarge(str(file_size))
+        async with aiofiles.open(self.obj.pathname(), mode='rb') as f_l:
+            file_data = await f_l.read()
+        f_l.close()
+        return file_data
+
+    async def delete(self, session=None):
+        if os.path.isfile(self.obj.pathname()):
+            os.remove(self.obj.pathname())
+            return True
+        if os.path.isdir(self.obj.pathname()):
+            dentries = os.listdir(self.obj.pathname())
+            if not dentries:
+                os.rmdir(self.obj.pathname())
+
+    async def exists(self, session=None):
+        return self.obj.stat()
+
+    async def info(self, session=None):
+        if self.obj.stat() is True:
+            metadata = {self.obj.pathname():os.stat(self.obj.pathname())}
+            return metadata
+        return None
+
+
 class EdgexAccess:
     """ the main edgex_access class with the main
         methods to list, get, put, delete etc
@@ -800,239 +1070,38 @@ class EdgexAccess:
     def __init__(self, obj):
         if obj is None:
             raise InvalidArgument(str(None))
+        store_t = obj.store_type()
         self.obj = obj
-
-    async def list(self, session):
-        """ List the elements in this folder """
-        if session is None:
-            raise InvalidArgument(str(session))
-        logger.info(str("list " + self.obj.pathname()))
-        final_list = []
-        if self.obj.store_type() == "FS":
-            if self.obj.isfolder():
-                final_list = os.listdir(self.obj.pathname())
-                print(final_list)
-                i = 0
-                for f_l in final_list:
-                    if os.path.isdir(self.obj.pathname() + "/" + f_l):
-                        final_list[i] = f_l + "/"
-                    i += 1
-            else:
-                if os.path.isfile(self.obj.pathname()):
-                    final_list.append(self.obj.pathname())
-            return final_list
-
-        elif self.obj.store_type() == "S3":
-
-            async with session.create_client('s3', region_name=self.obj.store.get_region(), \
-                                aws_secret_access_key=self.obj.store.get_secret(), \
-                                aws_access_key_id=self.obj.store.get_access(), \
-                                endpoint_url=self.obj.store.get_endpoint()) as client:
-
-                prefix = self.obj.objname()
-                resp = await client.list_objects(Bucket=self.obj.bucketname(), \
-                                                 Prefix=prefix, Delimiter='/')
-                retcode = resp['ResponseMetadata']['HTTPStatusCode']
-                if retcode != 200:
-                    raise RuntimeError("HTTP Error {}".format(retcode))
-
-                if 'CommonPrefixes' in resp:
-                    for r_x in resp['CommonPrefixes']:
-                        if prefix.endswith('/') and prefix and (prefix != r_x['Prefix']):
-                            final_list.append(r_x['Prefix'].replace(prefix, ''))
-                        elif not prefix:
-                            final_list.append(r_x['Prefix'])
-                        else:
-                            dlist = r_x['Prefix'].split('/')
-                            if dlist:
-                                if len(dlist[-1]) > 0:
-                                    final_list.append(dlist[-1])
-                                elif len(dlist[-2]) > 0:
-                                    final_list.append(dlist[-2])
-                            else:
-                                final_list.append(r_x['Prefix'])
-                elif 'Contents' in resp:
-                    for r_x in resp['Contents']:
-                        if prefix.endswith('/') and prefix:
-                            final_list.append(r_x['Key'].replace(prefix, ''))
-                        else:
-                            dlist = r_x['Key'].split('/')
-                            if dlist:
-                                final_list.append(dlist[-1])
-                            else:
-                                final_list.append(r_x['Prefix'])
-                return final_list
-
+        if store_t == "FS":
+            self.obj_access = EdgexFSAccess(obj)
+        elif store_t == "S3":
+            self.obj_access = EdgexS3Access(obj)
+        elif store_t == "MEM":
+            self.obj_access = EdgexMemAccess(obj)
         else:
             raise InvalidStore(self.obj.store_type())
 
-    async def exists(self, session):
-        """ if the object exists """
-        if session is None:
-            raise InvalidArgument(str(session))
-        logger.info(str("exists " + self.obj.pathname()))
-        if self.obj.store_type() == "FS":
-            return self.obj.stat()
-        elif self.obj.store_type() == "S3":
-            async with session.create_client('s3', region_name=self.obj.store.region, \
-                                        aws_secret_access_key=self.obj.store.secret, \
-                                        aws_access_key_id=self.obj.store.access, \
-                                        endpoint_url=self.obj.store.endpoint) as client:
-                try:
-                    hd = await client.head_object(Bucket=self.obj.bucketname(),\
-                                                  Key=self.obj.objname())
-                    retcode = hd['ResponseMetadata']['HTTPStatusCode']
-                    return retcode == 200
-                except:
-                    return False
-        else:
-            raise InvalidArgument(self.obj.store_type())
-
-    async def delete(self, session):
-        """ delete this object """
-        if session is None:
-            raise InvalidArgument(str(session))
-
-        logger.info(str("delete " + self.obj.pathname()))
-        if self.obj.store_type() == "FS":
-            if os.path.isfile(self.obj.pathname()):
-                os.remove(self.obj.pathname())
-                return True
-            if os.path.isdir(self.obj.pathname()):
-                dentries = os.listdir(self.obj.pathname())
-                if not dentries:
-                    os.rmdir(self.obj.pathname())
-
-        elif self.obj.store_type() == "S3":
-
-            async with session.create_client('s3', region_name=self.obj.store.region, \
-                                            aws_secret_access_key=self.obj.store.secret, \
-                                            aws_access_key_id=self.obj.store.access, \
-                                            endpoint_url=self.obj.store.endpoint) as client:
-                try:
-                    del_obj = await client.delete_object(Bucket=self.obj.bucketname(), \
-                                                         Key=self.obj.objname())
-                    retcode = del_obj['ResponseMetadata']['HTTPStatusCode']
-                    return retcode in (200, 204)
-                except Exception as exp:
-                    return False
-        else:
-            raise InvalidArgument(self.obj.store_type())
-
-    async def info(self, session):
-        """ get the underlying meta info on the object """
-        if session is None:
-            raise InvalidArgument(str(session))
-        logger.info(str("info " + self.obj.pathname()))
-        if self.obj.store_type() == "FS":
-            if self.obj.stat() is True:
-                metadata = {self.obj.pathname():os.stat(self.obj.pathname())}
-                return metadata
-            else:
-                return None
-        elif self.obj.store_type() == "S3":
-            async with session.create_client('s3', region_name=self.obj.store.region, \
-                                        aws_secret_access_key=self.obj.store.secret, \
-                                        aws_access_key_id=self.obj.store.access, \
-                                        endpoint_url=self.obj.store.endpoint) as client:
-                try:
-                    hd = await client.head_object(Bucket=self.obj.bucketname(),\
-                                                  Key=self.obj.objname())
-                    retcode = hd['ResponseMetadata']['HTTPStatusCode']
-                    if retcode == 200:
-                        return hd['ResponseMetadata']['HTTPHeaders']
-                    else:
-                        return None
-                except Exception as exp:
-                    return None
-        else:
-            raise InvalidArgument(self.obj.store_type())
-
-    async def get(self, session):
-        """ get the object """
-        if session is None:
-            raise InvalidArgument(str(session))
-        logger.info(str("get " + self.obj.pathname()))
-
-        if self.obj.store_type() == "FS":
-            file_size = os.stat(self.obj.pathname()).st_size
-            if file_size > MAX_SINGLE_OBJ:
-                raise EntityTooLarge(str(file_size))
-            async with aiofiles.open(self.obj.pathname(), mode='r', encoding="latin-1") as f_l:
-                file_data = await f_l.read()
-            f_l.close()
-            return file_data
-
-        elif self.obj.store_type() == "S3":
-            async with session.create_client('s3', region_name=self.obj.store.region, \
-                                                aws_secret_access_key=self.obj.store.secret, \
-                                                aws_access_key_id=self.obj.store.access, \
-                                                endpoint_url=self.obj.store.endpoint) as client:
-                try:
-                    with async_timeout.timeout(10):
-                        gobj = await client.get_object(Bucket=self.obj.bucketname(),\
-                                                       Key=self.obj.objname())
-                        body = await gobj['Body'].read()
-                        gobj['Body'].close()
-                        return body
-                except Exception as exp:
-                    logger.exception(exp)
-                    raise exp
-        else:
-            raise InvalidArgument(self.obj.store_type())
-
-    async def put(self, session):
-        """ put the object """
-        if session is None:
-            raise InvalidArgument(str(session))
-
+    async def list(self, session=None):
+        """ List the elements in this folder """
+        logger.info(str("list " + self.obj.pathname()))
+        return await self.obj_access.list(session)
+    async def put(self, session=None):
+        """ put this object using the desired access """
         logger.info(str("put " + self.obj.pathname()))
-        isdbuf = (self.obj.databuf is not None)
-        isarg = (self.obj.arg is not None)
-
-        logger.info(str("put " + self.obj.pathname() + \
-                        " databuf " + str(isdbuf)))
-        logger.info(str("put " + self.obj.pathname() + \
-                        " arg " + str(isarg)))
-
-        if not isdbuf:
-            if self.obj.store_type() == "FS":
-                try:
-                    os.makedirs(os.path.dirname(self.obj.pathname()))
-                except Exception as exp:
-                    logger.exception(exp)
-                    raise exp
-                return self.obj.pathname()
-            else:
-                logger.error(str("No databuf : " + self.obj.pathname()))
-                raise InvalidArgument(str(self.obj.pathname()))
-
-        if (self.obj.store_type() == "FS"):
-            if not os.path.exists(os.path.dirname(self.obj.pathname())):
-                try:
-                    os.makedirs(os.path.dirname(self.obj.pathname()))
-                except Exception as exp:
-                    logger.exception(exp)
-                    raise exp
-                open(self.obj.pathname(), 'wb').write(self.obj.databuf)
-
-            return self.obj.pathname()
-
-        elif self.obj.store_type() == "S3":
-
-            async with session.create_client('s3', region_name=self.obj.store.region, \
-                                                aws_secret_access_key=self.obj.store.secret, \
-                                                aws_access_key_id=self.obj.store.access, \
-                                                endpoint_url=self.obj.store.endpoint) as client:
-                try:
-                    with async_timeout.timeout(10):
-                        await client.put_object(Bucket=self.obj.bucketname(), \
-                                                        Key=self.obj.objname(), \
-                                                        Body=self.obj.databuf)
-                    return self.obj.pathname()
-
-                except Exception as exp:
-                    logger.exception(exp)
-                    raise exp
-        else:
-            raise InvalidArgument(self.obj.store_type())
+        return await self.obj_access.put(session)
+    async def get(self, session=None):
+        """ get this object using the desired access """
+        logger.info(str("get " + self.obj.pathname()))
+        return await self.obj_access.get(session)
+    async def delete(self, session=None):
+        """ delete this object using the desired access """
+        logger.info(str("delete " + self.obj.pathname()))
+        return await self.obj_access.delete(session)
+    async def exists(self, session=None):
+        """ exists this object using the desired access """
+        logger.info(str("exists " + self.obj.pathname()))
+        return await self.obj_access.exists(session)
+    async def info(self, session=None):
+        """ info this object using the desired access """
+        logger.info(str("info " + self.obj.pathname()))
+        return await self.obj_access.info(session)
