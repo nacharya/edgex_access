@@ -9,4 +9,5 @@ all: utests
 utests:
 	$(PYTHON) test_access.py run pwd
 	$(PYTHON) test_access.py run ix
-	$(PYTHON) test_access.py  run minio
+	$(PYTHON) test_access.py run minio
+	#$(PYTHON) test_access.py run aws3

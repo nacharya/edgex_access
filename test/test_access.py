@@ -64,16 +64,25 @@ async def getput_callback(cmd, obj, databuf, session=None):
 class TestEdgexAccess():
     """ Main Test class for the Unit test for EdgexAccess """
     gcfg = None
+    maxcount = 0
+    modcount = 0
 
     def __init__(self, cfg):
         """ set the config """
         self.gcfg = cfg
+        self.maxcount = 50
+        self.modcount = 10
+
+    def bucketname(self, store_name):
+        store = self.gcfg.get_store(store_name)
+        bname = store.default_bucket()
+        return bname
 
     async def genfile(self, store_name, session=None):
         ofile = "MEM://" + str(os.getpid()) + "/genfile"
         source_obj = EdgexObject(self.gcfg, ofile)
         source_obj.random_buffer()
-        dfile = store_name + "://" + "tdata" + "/" + "genfile"
+        dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         source_obj.arg = dest_obj
         logger.debug(source_obj.pathname())
@@ -81,33 +90,32 @@ class TestEdgexAccess():
         databuf = await edgex_op.get(session)
         await getput_callback('put', source_obj, databuf, session)
     async def exists(self, store_name, session=None):
-        dfile = store_name + "://" + "tdata" + "/" + "genfile"
+        dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
         edgex_op = EdgexAccess(dest_obj)
         res = await edgex_op.exists(session)
         await cmd_callback('exists', dest_obj, res)
     async def info(self, store_name, session=None):
-        dfile = store_name + "://" + "tdata" + "/" + "genfile"
+        dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
         edgex_op = EdgexAccess(dest_obj)
         res = await edgex_op.info(session)
         await cmd_callback('info', dest_obj, res)
     async def delete(self, store_name, session=None):
-        dfile = store_name + "://" + "tdata" + "/" + "genfile"
+        dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
         edgex_op = EdgexAccess(dest_obj)
         res = await edgex_op.delete(session)
         await cmd_callback('delete', dest_obj, res)
         res = await edgex_op.exists(session)
-
     async def putget(self, store_name, session=None):
         ofile = "MEM://" + str(os.getpid()) + "/buffer"
         source_obj = EdgexObject(self.gcfg, ofile)
         source_obj.random_buffer()
-        dfile = store_name + "://" + "tdata" + "/" + "buffer"
+        dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "buffer"
         dest_obj = EdgexObject(self.gcfg, dfile)
         source_obj.arg = dest_obj
         logger.debug(source_obj.pathname())
@@ -116,8 +124,7 @@ class TestEdgexAccess():
         await getput_callback('put', source_obj, databuf, session)
         h = EdgexHash()
         SIG1 = h.sha256(databuf)
-
-        ofile = store_name + "://" + "tdata" + "/" + "buffer"
+        ofile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "buffer"
         source_obj = EdgexObject(self.gcfg, ofile)
         logger.debug(source_obj.pathname())
         edgex_op = EdgexAccess(source_obj)
@@ -125,22 +132,47 @@ class TestEdgexAccess():
         await cmd_callback('get', source_obj, databuf)
         h = EdgexHash()
         SIG2 = h.sha256(databuf)
-
         if SIG1 == SIG2:
             logger.debug(str("Match: " + SIG1))
         else:
             logger.error("Signature mismatch !!")
-
         # cleanup
         res = await edgex_op.delete(session)
         await cmd_callback('delete', dest_obj, res)
+    def rgenfile(self, store_name, session=None):
+        dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
+        mdpath = dpath + "/d0"
+        for i in range(0, self.maxcount):
+            ofile = "MEM://" + str(os.getpid()) + "/genfile"
+            source_obj = EdgexObject(self.gcfg, ofile)
+            source_obj.random_buffer()
+            filename = mdpath +  "/" + "dd" + str(i)
+            dest_obj = EdgexObject(self.gcfg, filename)
+            source_obj.arg = dest_obj
+            logger.debug(dest_obj.pathname())
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(session)
+            await getput_callback('put', source_obj, databuf, session)
+            if ((i % modcount) == 0) and (i != 0):
+                mdpath = dpath + "/" + "d" + str(i)
+    def rexists(self, store_name, session=None):
+        pass
+    def rinfo(self, store_name, session=None):
+        pass
+    def rdelete(self, store_name, session=None):
+        pass
+    def rputget(self, store_name, session=None):
+        pass
+
 
 
 def usage():
     print(sys.argv[0] + "\t -d <level> -c ")
     print(sys.argv[0] + "\t -d <level> run <store_name>")
 
-TEST_CASES = ["genfile", "info", "exists", "delete", "putget"]
+TEST_CASES = ["genfile", "info", "exists", "delete", "putget",\
+              "rgen", "rinfo", "rexists", "rdelete", "rputget"]
+
 #TEST_CASES = ["genfile"]
 
 def show_cases():
@@ -158,11 +190,6 @@ async def process_command(cfg, session, cmd, store_name):
             await run_case(cfg, tcase, store_name, session)
     else:
         logger.error("Unknown command: " + cmd)
-
-def do_cmd(cfg, cmd, store_name):
-    if cmd == "run":
-        for tcase in TEST_CASES:
-            run_case(cfg, tcase, store_name)
 
 
 def main():
@@ -212,16 +239,13 @@ def main():
     cfg_file = expanduser("~") + DEFAULT_CONFIG
     cfg = init_config(cfg_file)
 
-    if cfg.io_type() == "SYNC":
-        do_cmd(cfg, cmd, store_name)
-    elif cfg.io_type() == "ASYNC":
-        loop = asyncio.get_event_loop()
-        # session = aiohttp.ClientSession(loop=loop)
-        session = aiobotocore.get_session(loop=loop)
-        tasks = [asyncio.ensure_future(process_command(cfg, session, cmd, store_name))]
-        loop.run_until_complete(asyncio.gather(*tasks))
-        #loop.run_forever()
-        loop.close()
+    loop = asyncio.get_event_loop()
+    # session = aiohttp.ClientSession(loop=loop)
+    session = aiobotocore.get_session(loop=loop)
+    tasks = [asyncio.ensure_future(process_command(cfg, session, cmd, store_name))]
+    loop.run_until_complete(asyncio.gather(*tasks))
+    #loop.run_forever()
+    loop.close()
 
     logger.debug(sys.argv[0] + " done ")
 

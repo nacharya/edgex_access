@@ -164,6 +164,9 @@ class InvalidCommand(EdgexException):
 class InvalidStore(EdgexException):
     """ Store is invalid """
     pass
+class InvalidDataBuffer(EdgexException):
+    """ Buffer is invalid """
+    pass
 class KeyTooLong(EdgexException):
     """ Key is too long """
     pass
@@ -457,23 +460,55 @@ class EdgexConfig:
         if self.cfg_data['META']:
             self.meta = self.cfg_data['META']
 
+        """ setup the pwd store and the in-memory store """
+        store = self.create("pwd", "FS", os.getcwd(), tag="file")
+        self.add_store("pwd", store)
+        store = self.create("mem", "MEM", str(os.getpid()), tag="mem")
+        self.add_store("MEM", store)
+
     def io_type(self):
         """ whether this is sync or async """
         return self.syncio
 
-    def create(self, name, store_type, bucket, access="", secret="",\
-            endpoint=None, region="", token="", tag=""):
+    def change_value(self, cfg_filedata, st_name, var_name, var_value):
+        self.cfg_data = json.loads(cfg_filedata)
+        self.store_dict = {}
+        stores = self.cfg_data['stores']
+        for sname in stores:
+            if sname == st_name:
+                stcfg = self.store_dict[st_name]
+                stcfg[var_name] = var_value
+        self.save(cfg_filedata)
+
+    def create(self, name, store_type, bucket, \
+               access="", secret="", endpoint=None, \
+               region="", token="", tag=""):
+
+        if not name or not store_type or not bucket:
+            raise InvalidArgument(name)
+
         """ create a store instance """
         scfg = {}
+        scfg['NAME'] = name
         scfg['STORE_TYPE'] = store_type
-        scfg['ACCESS'] = access
-        scfg['SECRET'] = secret
-        scfg['REGION'] = region
+        scfg['BUCKET'] = bucket
+
+        # optional
+        if access and store_type == 'S3':
+            scfg['ACCESS'] = access
+        else:
+            raise InvalidArgument(name)
+
+        if secret and store_type == 'S3':
+            scfg['SECRET'] = secret
+        else:
+            raise InvalidArgument(name)
+
+        # optional 
         scfg['ENDPOINT'] = endpoint
+        scfg['REGION'] = region
         scfg['TOKEN'] = token
         scfg['TAG'] = tag
-        scfg['NAME'] = name
-        scfg['BUCKET'] = bucket
 
         # jcfg = json.dumps(scfg)
         if store_type == "FS":
@@ -487,12 +522,22 @@ class EdgexConfig:
 
         return store
 
-    def set_stores(self):
-        """ setup the pwd store and the in-memory store """
-        store = self.create("pwd", "FS", os.getcwd(), tag="file")
-        self.store_dict['pwd'] = store
-        store = self.create("mem", "MEM", str(os.getpid()), tag="mem")
-        self.store_dict['MEM'] = store
+    def get_store(self, store_name):
+        """ get me a store with this name from the dictionary """
+        try:
+            store = self.store_dict[store_name]
+            return store
+        except Exception as exp:
+            logger.exception(exp)
+            raise InvalidStore(store_name)
+
+    def add_store(self, name, store):
+        """ add this store object with a name as a key """
+        self.store_dict[name] = store
+
+    def del_store(self, name):
+        """ delete this store object with a name as a key """
+        del self.store_dict[name]
 
     def get_pwd_store(self):
         """ return a store corresponding to the pwd in local store """
@@ -522,29 +567,16 @@ class EdgexConfig:
             os.makedirs(dpath)
         return dpath
 
+    def show_store(self, store):
+        """ show one store """
+        logger.info(str("\t" + store.get_name() + "\t" + store.get_type() \
+                            + "\t" + store.default_bucket()))
+
     def show_stores(self):
         """ show me all the stores """
         for k in self.store_dict:
             store = self.store_dict[k]
-            logger.info(str("\t" + store.get_name() + "\t" + store.get_type() \
-                            + "\t" + store.default_bucket()))
-
-    def get_stores(self):
-        """ get the stores as a list """
-        ret = []
-        for k in self.store_dict:
-            store = self.store_dict[k]
-            ret.append(store.name)
-        return ret
-
-    def get_store(self, store_name):
-        """ get me a store with this name from the dictionary """
-        try:
-            store = self.store_dict[store_name]
-            return store
-        except Exception as exp:
-            logger.exception(exp)
-            raise InvalidStore(store_name)
+            self.show_store(store)
 
     def show_all(self):
         """ show all the stores """
@@ -554,6 +586,9 @@ class EdgexConfig:
         logger.info("stores:")
         self.show_stores()
 
+    def save(self, cfgFile):
+        with open(cfgFile, 'w') as outfile:
+            json.dump(self.cfg_data, outfile, indent=4, sort_keys=True)
 
 
 
@@ -845,11 +880,9 @@ class EdgexMemAccess(EdgexAccessBase):
         pass
     async def get(self, session=None):
         """ get the databuf from in-memory """
-        if self.obj.databuf:
-            return self.obj.databuf
-        else:
-            raise InvalidDatabuffer(self.obj.pathname())
-        pass
+        if not self.obj.databuf:
+            raise InvalidDataBuffer(self.obj.pathname())
+        return self.obj.databuf
     async def delete(self, session=None):
         """ delete the entry from in-memory """
         pass
@@ -1061,7 +1094,6 @@ class EdgexFSAccess(EdgexAccessBase):
             metadata = {self.obj.pathname():os.stat(self.obj.pathname())}
             return metadata
         return None
-
 
 class EdgexAccess:
     """ the main edgex_access class with the main

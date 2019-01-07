@@ -27,7 +27,9 @@ clean:
 	rm -rf dist build
 	rm -rf __pycache__
 	make -C docs clean
-	rm test.log
+	rm -f sp3/*.log
+	rm -f test/*.log
+	rm -f *.log
 
 req:
 	pip freeze > $(REQ)

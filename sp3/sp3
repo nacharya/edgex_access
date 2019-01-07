@@ -84,17 +84,35 @@ async def s3e_store(cfg, args):
         return
 
     subcmd = args[0]
+    cfg_file = expanduser("~") + DEFAULT_CONFIG
     if subcmd == "add":
-        if len(args) < 2:
-            logger.info("add <store_name>")
+        if len(args) < 4:
+            logger.info("add <store_name> <store_type> <bucket>")
+            logger.info("<store_type> can be FS, S3, GOOG, iCloud ")
+            logger.info("<bucket> is the name of the default bucket")
+        else:
+            store = cfg.create(args[1], args[2], args[3])
+            cfg.add_store(args[1], store)
+            cfg.save(cfg_file)
+
     elif subcmd == "del":
         if len(args) < 2:
-            logger.info("add <store_name>")
+            logger.info("del <store_name>")
+        else:
+            cfg.del_store(args[1])
     elif subcmd == "edit":
+        if len(args) < 4:
+            logger.info("edit <store_name> <var_name> <var_value>")
+        else:
+            cfg.change_value(cfg_file, args[1], args[2], args[3])
+    elif subcmd == "show":
         if len(args) < 2:
-            logger.info("add <store_name>")
+            logger.info("show <store_name> ")
+        else:
+            store = cfg.get_store(args[1])
+            cfg.show_store(store)
     else:
-        logger.info("store [ add | del | edit ] <store_name> ")
+        logger.info("store [ add | del | edit | show ] <store_name> ")
 
 
 async def parse_cmd_1(cfg, args):
