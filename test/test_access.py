@@ -31,7 +31,6 @@ def init_config(cfg_file):
         with open(cfg_file, mode='r') as f_l:
             cfg_contents = f_l.read()
             cfg = EdgexConfig(cfg_contents)
-            cfg.set_stores()
             return cfg
     else:
         logger.error(str("Unable to access: " + cfg_file))
@@ -151,8 +150,8 @@ class TestEdgexAccess():
             source_obj.arg = dest_obj
             logger.debug(dest_obj.pathname())
             edgex_op = EdgexAccess(source_obj)
-            databuf = await edgex_op.get(session)
-            await getput_callback('put', source_obj, databuf, session)
+            databuf = edgex_op.get(session)
+            getput_callback('put', source_obj, databuf, session)
             if ((i % modcount) == 0) and (i != 0):
                 mdpath = dpath + "/" + "d" + str(i)
     def rexists(self, store_name, session=None):
@@ -170,8 +169,8 @@ def usage():
     print(sys.argv[0] + "\t -d <level> -c ")
     print(sys.argv[0] + "\t -d <level> run <store_name>")
 
-TEST_CASES = ["genfile", "info", "exists", "delete", "putget",\
-              "rgen", "rinfo", "rexists", "rdelete", "rputget"]
+TEST_CASES = ["genfile", "info", "exists", "delete", "putget"]
+#              "rgen", "rinfo", "rexists", "rdelete", "rputget"]
 
 #TEST_CASES = ["genfile"]
 

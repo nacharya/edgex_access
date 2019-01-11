@@ -53,9 +53,11 @@ setup(
     packages=['edgex_access'],
     python_requires='>=3',
     install_requires=['urllib3', 'requests_aws4auth', 'aiobotocore', \
-                      'simplejson', 'lxml', 'asyncio'],
+                      'simplejson', 'lxml', 'asyncio', 'google-cloud-storage'],
+    include_package_data=True,
     project_urls={
         'Bug Reports': 'https://github.com/nacharya/edgex_access/issues',
         'Source': 'https://github.com/nacharya/edgex_access/',
     },
+    zip_safe=False
 )
