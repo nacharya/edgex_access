@@ -73,11 +73,16 @@ class TestEdgexAccess():
         self.modcount = 10
 
     def bucketname(self, store_name):
+        """ retrieve only the bucket name """
         store = self.gcfg.get_store(store_name)
-        bname = store.default_bucket()
+        if store.get_type() == "FS":
+            bname = ""
+        else:
+            bname = store.default_bucket()
         return bname
 
     async def genfile(self, store_name, session=None):
+        """ generate a single file """
         ofile = "MEM://" + str(os.getpid()) + "/genfile"
         source_obj = EdgexObject(self.gcfg, ofile)
         source_obj.random_buffer()
@@ -89,6 +94,7 @@ class TestEdgexAccess():
         databuf = await edgex_op.get(session)
         await getput_callback('put', source_obj, databuf, session)
     async def exists(self, store_name, session=None):
+        """ check if the object exists """
         dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
@@ -96,6 +102,7 @@ class TestEdgexAccess():
         res = await edgex_op.exists(session)
         await cmd_callback('exists', dest_obj, res)
     async def info(self, store_name, session=None):
+        """ retrieve the metadata infoon this object """
         dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
@@ -103,6 +110,7 @@ class TestEdgexAccess():
         res = await edgex_op.info(session)
         await cmd_callback('info', dest_obj, res)
     async def delete(self, store_name, session=None):
+        """ delete this object """
         dfile = store_name + "://" + self.bucketname(store_name) + "/tdata" + "/" + "genfile"
         dest_obj = EdgexObject(self.gcfg, dfile)
         logger.debug(dest_obj.pathname())
@@ -111,6 +119,7 @@ class TestEdgexAccess():
         await cmd_callback('delete', dest_obj, res)
         res = await edgex_op.exists(session)
     async def putget(self, store_name, session=None):
+        """ do a put get test """
         ofile = "MEM://" + str(os.getpid()) + "/buffer"
         source_obj = EdgexObject(self.gcfg, ofile)
         source_obj.random_buffer()
@@ -138,7 +147,8 @@ class TestEdgexAccess():
         # cleanup
         res = await edgex_op.delete(session)
         await cmd_callback('delete', dest_obj, res)
-    def rgenfile(self, store_name, session=None):
+    async def rgenfile(self, store_name, session=None):
+        """ recursive generation of a dir/file random data """
         dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
         mdpath = dpath + "/d0"
         for i in range(0, self.maxcount):
@@ -148,31 +158,87 @@ class TestEdgexAccess():
             filename = mdpath +  "/" + "dd" + str(i)
             dest_obj = EdgexObject(self.gcfg, filename)
             source_obj.arg = dest_obj
-            logger.debug(dest_obj.pathname())
+            #logger.debug(dest_obj.pathname())
             edgex_op = EdgexAccess(source_obj)
-            databuf = edgex_op.get(session)
-            getput_callback('put', source_obj, databuf, session)
-            if ((i % modcount) == 0) and (i != 0):
+            databuf = await edgex_op.get(session)
+            await getput_callback('put', source_obj, databuf, session)
+            if ((i % self.modcount) == 0) and (i != 0):
                 mdpath = dpath + "/" + "d" + str(i)
-    def rexists(self, store_name, session=None):
-        pass
-    def rinfo(self, store_name, session=None):
-        pass
-    def rdelete(self, store_name, session=None):
-        pass
-    def rputget(self, store_name, session=None):
-        pass
+    async def rinfo(self, store_name, session=None):
+        """ recursive retrieval of metadata on the generated sample """
+        dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
+        mdpath = dpath + "/d0"
+        for i in range(0, self.maxcount):
+            filename = mdpath +  "/" + "dd" + str(i)
+            d_obj = EdgexObject(self.gcfg, filename)
+            logger.info(d_obj.pathname())
+            edgex_op = EdgexAccess(d_obj)
+            res = await edgex_op.info(session)
+            await cmd_callback('info', d_obj, res)
+    async def rexists(self, store_name, session=None):
+        """ recursively check if the object exists """
+        dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
+        mdpath = dpath + "/d0"
+        for i in range(0, self.maxcount):
+            filename = mdpath +  "/" + "dd" + str(i)
+            d_obj = EdgexObject(self.gcfg, filename)
+            logger.info(d_obj.pathname())
+            edgex_op = EdgexAccess(d_obj)
+            res = await edgex_op.exists(session)
+            await cmd_callback('exists', d_obj, res)
+    async def rdelete(self, store_name, session=None):
+        """ recursively delete the dir/file tree """
+        dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
+        mdpath = dpath + "/d0"
+        for i in range(0, self.maxcount):
+            filename = mdpath +  "/" + "dd" + str(i)
+            d_obj = EdgexObject(self.gcfg, filename)
+            logger.info(d_obj.pathname())
+            edgex_op = EdgexAccess(d_obj)
+            res = await edgex_op.delete(session)
+            await cmd_callback('delete', d_obj, res)
 
+    async def rputget(self, store_name, session=None):
+        """ recursively run the put get with signature check """
+        dpath = store_name + "://" + self.bucketname(store_name) + "/tdata"
+        mdpath = dpath + "/d0"
+        for i in range(0, self.maxcount):
+            ofile = "MEM://" + str(os.getpid()) + "/buffer"
+            source_obj = EdgexObject(self.gcfg, ofile)
+            source_obj.random_buffer()
+            dfile = mdpath +  "/" + "dd" + str(i)
+            dest_obj = EdgexObject(self.gcfg, dfile)
+            source_obj.arg = dest_obj
+            logger.debug(source_obj.pathname())
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(session)
+            await getput_callback('put', source_obj, databuf, session)
+            h = EdgexHash()
+            SIG1 = h.sha256(databuf)
+            ofile = dfile
+            source_obj = EdgexObject(self.gcfg, ofile)
+            logger.debug(source_obj.pathname())
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(session)
+            await cmd_callback('get', source_obj, databuf)
+            h = EdgexHash()
+            SIG2 = h.sha256(databuf)
+            if SIG1 == SIG2:
+                logger.debug(str("Match: " + SIG1))
+            else:
+                logger.error("Signature mismatch !!")
+            # cleanup
+            res = await edgex_op.delete(session)
+            await cmd_callback('delete', dest_obj, res)
 
 
 def usage():
     print(sys.argv[0] + "\t -d <level> -c ")
     print(sys.argv[0] + "\t -d <level> run <store_name>")
 
-TEST_CASES = ["genfile", "info", "exists", "delete", "putget"]
-#              "rgen", "rinfo", "rexists", "rdelete", "rputget"]
+#TEST_CASES = ["genfile", "info", "exists", "delete", "putget"]
 
-#TEST_CASES = ["genfile"]
+TEST_CASES = ["rgenfile", "rexists", "rinfo", "rdelete", "rputget"]
 
 def show_cases():
     for i in TEST_CASES:
@@ -188,8 +254,7 @@ async def process_command(cfg, session, cmd, store_name):
         for tcase in TEST_CASES:
             await run_case(cfg, tcase, store_name, session)
     else:
-        logger.error("Unknown command: " + cmd)
-
+        logger.error(str("Unknown command: " + cmd))
 
 def main():
     assert sys.version_info >= (3, 5)
@@ -230,7 +295,7 @@ def main():
         formatter = logzero.LogFormatter(fmt=log_format)
         logzero.setup_default_logger(level=logging.INFO, formatter=formatter)
 
-    logger.debug(sys.argv[0] + " started ")
+    logger.debug(str(sys.argv[0] + " started "))
 
     cmd = remainder[0]
     store_name = remainder[1]
@@ -246,7 +311,7 @@ def main():
     #loop.run_forever()
     loop.close()
 
-    logger.debug(sys.argv[0] + " done ")
+    logger.debug(str(sys.argv[0] + " done "))
 
 if __name__ == '__main__':
     #unittest.main()

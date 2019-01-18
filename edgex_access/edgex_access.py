@@ -116,7 +116,7 @@ class EdgexConfig:
         if self.cfg_data['META']:
             self.meta = self.cfg_data['META']
 
-        """ setup the pwd store and the in-memory store """
+        # setup the pwd store and the in-memory store
         store = self.create("pwd", "FS", os.getcwd(), tag="file")
         self.add_store("pwd", store)
         store = self.create("mem", "MEM", str(os.getpid()), tag="mem")
@@ -127,6 +127,7 @@ class EdgexConfig:
         return self.syncio
 
     def change_value(self, cfg_filedata, st_name, var_name, var_value):
+        """ Change one value in the sore """
         self.cfg_data = json.loads(cfg_filedata)
         self.store_dict = {}
         stores = self.cfg_data['stores']
@@ -139,11 +140,11 @@ class EdgexConfig:
     def create(self, name, store_type, bucket, \
                access="", secret="", endpoint=None, \
                region="", token="", tag=""):
+        """ create a store instance """
 
         if not name or not store_type or not bucket:
             raise InvalidArgument(name)
 
-        """ create a store instance """
         scfg = {}
         scfg['NAME'] = name
         scfg['STORE_TYPE'] = store_type
@@ -158,7 +159,7 @@ class EdgexConfig:
                 raise InvalidArgument(name)
             scfg['SECRET'] = secret
 
-        # optional 
+        # optional
         scfg['ENDPOINT'] = endpoint
         scfg['REGION'] = region
         scfg['TOKEN'] = token
@@ -240,8 +241,9 @@ class EdgexConfig:
         logger.info("stores:")
         self.show_stores()
 
-    def save(self, cfgFile):
-        with open(cfgFile, 'w') as outfile:
+    def save(self, cfg_file):
+        """ save this file as a json file on disk """
+        with open(cfg_file, 'w') as outfile:
             json.dump(self.cfg_data, outfile, indent=4, sort_keys=True)
 
 
@@ -508,18 +510,23 @@ class EdgexAccess:
         return await self.obj_access.info(session)
 
 class EdgexMeta:
+    """ This object is specific to meta data only """
     def __init__(self, obj):
         if obj is None:
             raise InvalidArgument(str(None))
         self.obj = obj
     def init_store(self, store_file):
+        """ Initialize the meta store """
         self.obj.init_store(store_file)
     def put(self, key, value):
+        """ put a key value to this meta store """
         self.obj.put(key, value)
     def get(self, key):
+        """ retrieve the value for this key """
         return self.obj.get(key)
     def delete(self, key):
+        """ delete the  element with this key """
         self.obj.delete(key)
     def clear_store(self):
+        """ wipe out the entire store"""
         self.obj.clear_store()
-

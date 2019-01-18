@@ -7,10 +7,10 @@ class EdgexStoreBase:
     def __init__(self, cfg):
         self.name = cfg['NAME']
         self.type = cfg['STORE_TYPE']
-        #if (self.type != "FS") or (self.type != "S3"):
-        #    raise InvalidStore(self.type)
         self.bucket = cfg['BUCKET']
         self.token = cfg['TOKEN']
+        #if (self.type != "FS") or (self.type != "S3"):
+        #    raise InvalidStore(self.type)
         self.tag = cfg['TAG']
         if not self.tag:
             raise EmptyTag(self.tag)
@@ -35,16 +35,12 @@ class EdgexStoreBase:
 class EdgexMetaBase:
     """ Base class to access the metadata only """
     def __init__(self):
-        pass
+        self.store_file = ""
     def init_store(self, store_file):
-        pass
-    def put(self, key, val):
-        pass
-    def get(self, key):
-        pass
-    def delete(self, key):
-        pass
+        """ Initialize the meta store if needed """
+        self.store_file = store_file
     def clear_store(self):
+        """ remove and delete the meta store """
         pass
 
 class EdgexAccessBase:

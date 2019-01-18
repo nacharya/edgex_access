@@ -1,11 +1,9 @@
-''' this is primarily for errors and exceptions '''
+''' This is primarily for errors and exceptions '''
 
 from xml.etree.ElementTree import fromstring as parse_xml, ParseError
 
-#Error objects, Exceptions etc
-#============================================================================
 class EdgexException(Exception):
-    """Base for exceptions returned by S3 servers"""
+    """Base for errors, exceptions returned by edgex_access components """
     @staticmethod
     def from_bytes(status, body):
         """

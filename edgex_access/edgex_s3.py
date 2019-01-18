@@ -2,7 +2,6 @@
 ''' S3 specific functions '''
 
 import os
-import aiobotocore
 import async_timeout
 
 from logzero import logger
@@ -19,19 +18,25 @@ class EdgexS3Store(EdgexStoreBase):
         self.secret = cfg['SECRET']
         self.region = cfg['REGION']
         self.endpoint = cfg['ENDPOINT']
+
     def get_endpoint(self):
+        """ return the declared endpoint """
         return self.endpoint
     def get_region(self):
+        """ the default region is needed for AWS """
         return self.region
     def get_access(self):
+        """ The ACCESS value """
         return self.access
     def get_secret(self):
+        """ TheSECRET vaue """
         return self.secret
 
 class EdgexS3Access(EdgexAccessBase):
     """ S3 protocol access """
     def __init__(self, obj):
         super().__init__(obj, "S3")
+
     async def list(self, session=None):
         """ List the elements """
         final_list = []
@@ -73,9 +78,10 @@ class EdgexS3Access(EdgexAccessBase):
                         else:
                             final_list.append(r_x['Prefix'])
             return final_list
+
     async def put(self, session=None):
+        """ PUT the buffer in databuf using the S3protocol """
         isdbuf = (self.obj.databuf is not None)
-        
         logger.info(str("put " + self.obj.pathname() + \
                         " databuf " + str(isdbuf)))
         if not isdbuf:
@@ -101,6 +107,7 @@ class EdgexS3Access(EdgexAccessBase):
                 raise exp
 
     async def get(self, session=None):
+        """ GET the obj using the S3 protocol ane return the buffer """
         async with session.create_client('s3', region_name=self.obj.store.get_region(), \
                                             aws_secret_access_key=self.obj.store.get_secret(), \
                                             aws_access_key_id=self.obj.store.get_access(), \
@@ -128,33 +135,36 @@ class EdgexS3Access(EdgexAccessBase):
                 retcode = del_obj['ResponseMetadata']['HTTPStatusCode']
                 return retcode in (200, 204)
             except Exception as exp:
+                logger.exception(exp)
                 return False
 
     async def exists(self, session):
+        """ EXISTS checks if the objects is there or not there """
         async with session.create_client('s3', region_name=self.obj.store.get_region(), \
                                     aws_secret_access_key=self.obj.store.get_secret(), \
                                     aws_access_key_id=self.obj.store.get_access(), \
                                     endpoint_url=self.obj.store.get_endpoint()) as client:
             try:
-                hd = await client.head_object(Bucket=self.obj.bucketname(),\
+                hd_obj = await client.head_object(Bucket=self.obj.bucketname(),\
                                               Key=self.obj.objname())
-                retcode = hd['ResponseMetadata']['HTTPStatusCode']
+                retcode = hd_obj['ResponseMetadata']['HTTPStatusCode']
                 return retcode == 200
             except:
                 return False
 
     async def info(self, session=None):
+        """ Retrieve the Meta data that exists on this object """
         async with session.create_client('s3', region_name=self.obj.store.get_region(), \
                                     aws_secret_access_key=self.obj.store.get_secret(), \
                                     aws_access_key_id=self.obj.store.get_access(), \
                                     endpoint_url=self.obj.store.get_endpoint()) as client:
             try:
-                hd = await client.head_object(Bucket=self.obj.bucketname(),\
+                hd_obj = await client.head_object(Bucket=self.obj.bucketname(),\
                                               Key=self.obj.objname())
-                retcode = hd['ResponseMetadata']['HTTPStatusCode']
+                retcode = hd_obj['ResponseMetadata']['HTTPStatusCode']
                 if retcode == 200:
-                    return hd['ResponseMetadata']['HTTPHeaders']
-                else:
-                    return None
+                    return hd_obj['ResponseMetadata']['HTTPHeaders']
+                return None
             except Exception as exp:
+                logger.exception(exp)
                 return None
