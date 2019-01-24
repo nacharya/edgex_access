@@ -7,6 +7,10 @@ import os
 import json
 import hashlib
 import random
+
+import asyncio
+import aiobotocore
+
 from logzero import logger
 
 from .edgex_exceptions import *
@@ -87,9 +91,11 @@ class EdgexStore:
     def get_name(self):
         """ return the name """
         return self.store.get_name()
+
     def get_type(self):
         """ return the type """
         return self.store.get_type()
+
     def default_bucket(self):
         """ the default bucket """
         return self.store.default_bucket()
@@ -275,6 +281,8 @@ class EdgexObjectName:
 
     """
     def __init__(self, name):
+        if len(name) == 0:
+            raise InvalidStore("Store not defined :" + name)
         self.oname = name
         self.objname = ""
         self.bucketname = ""
@@ -367,7 +375,8 @@ class EdgexObject:
         self.amzdate = tm_now.strftime('%Y%m%dT%H%M%SZ')
         self.datestamp = tm_now.strftime('%Y%m%d') # Date w/o time, used in credential scope
 
-        logger.debug(str("OBJECT : " + self.pathname() + "\t" + str(self.datestamp)))
+        #logger.debug(str("OBJECT : " + self.pathname() + "\t" + str(self.datestamp)))
+        logger.debug(str("OBJECT : " + self.pathname()))
 
 
     def isfolder(self):
@@ -530,3 +539,172 @@ class EdgexMeta:
     def clear_store(self):
         """ wipe out the entire store"""
         self.obj.clear_store()
+
+
+class EdgexDataAccess:
+    """ main data access methods """
+    cfg = None
+    tasks = []
+
+    def __init__(self, cfg, loop):
+        self.cfg = cfg
+        self.session = aiobotocore.get_session(loop=loop)
+
+    async def copy(self, source_name, dest_name, recursive=False):
+        if not source_name or not dest_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            source_obj.arg = dest_obj
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'get', source_obj, databuf)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def move(self, source_name, dest_name, recursive=False):
+        if not source_name or not dest_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            source_obj.arg = dest_obj
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'get', source_obj, databuf)
+            deleted = await edgex_op.delete(self.session)
+            await self.cmd_callback('delete', source_obj, deleted)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def wget(self, source_name):
+        if not source_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'get', source_obj, databuf)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def delete(self, source_name, recursive=False):
+        if not source_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            edgex_op = EdgexAccess(source_obj)
+            deleted = await edgex_op.delete(self.session)
+            await self.cmd_callback('delete', source_obj, deleted)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def ls(self, source_name, recursive=False):
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            edgex_op = EdgexAccess(source_obj)
+            list_out = await edgex_op.list(self.session)
+            await self.cmd_callback('list', source_obj, list_out)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def get(self, source_name, dest_name, recursive=False):
+        if not source_name or not dest_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+
+            source_obj.arg = dest_obj
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'get', source_obj, databuf)
+            return True
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+    async def put(self, source_name, dest_name, recursive=False):
+        if not source_name or not dest_name:
+            raise InvalidArgument
+        try:
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            source_obj.arg = dest_obj
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'put', source_obj, databuf)
+
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+
+    async def exists(self, source_name, recursive=False):
+        if not source_name:
+            raise InvalidArgument
+        try:
+            edgex_obj = EdgexObject(self.cfg, source_name)
+            edgex_op = EdgexAccess(edgex_obj)
+            is_there = await edgex_op.exists(self.session)
+            await self.cmd_callback('exists', edgex_obj, is_there)
+            return is_there
+        except Exception as exp:
+            logger.exception(exp)
+        return False
+
+    async def info(self, source_name, recursive=False):
+        if not source_name:
+            raise InvalidArgument
+        try:
+            edgex_obj = EdgexObject(self.cfg, source_name)
+            edgex_op = EdgexAccess(edgex_obj)
+            obj_info = await edgex_op.info(self.session)
+            await self.cmd_callback('info', edgex_obj, obj_info)
+            return obj_info
+        except Exception as exp:
+            logger.exception(exp)
+        return None
+
+    async def cmd_callback(self, cmd, obj, result):
+        logger.info(str(result))
+
+    async def gp_callback(self, session, cmd, obj, result):
+        try:
+            dest_obj = obj.arg
+            dest_obj.databuf = result
+            edgex_op = EdgexAccess(dest_obj)
+            put_obj = await edgex_op.put(session)
+            await self.cmd_callback('put', dest_obj, put_obj)
+        except Exception as exp:
+            logger.exception(exp)
+
+
+    def create_task(self, task_name, source_name, dest_name, recursive=False):
+        if task_name == 'ls':
+            self.tasks.append(self.ls(source_name))
+        elif task_name == 'wget':
+            self.tasks.append(self.wget(source_name))
+        elif task_name == 'exists':
+            self.tasks.append(self.exists(source_name))
+        elif task_name == 'put':
+            self.tasks.append(self.put(source_name, dest_name, recursive))
+        elif task_name == 'get':
+            self.tasks.append(self.get(source_name, dest_name, recursive))
+        elif task_name == 'delete':
+            self.tasks.append(self.delete(source_name, recursive))
+        elif task_name == 'info':
+            self.tasks.append(self.info(source_name))
+        elif task_name == 'copy':
+            self.tasks.append(self.copy(source_name, dest_name, recursive))
+        elif task_name == 'move':
+            self.tasks.append(self.move(source_name, dest_name, recursive))
+        else:
+            raise InvalidArgument
+
+    def execute(self, loop):
+        loop.run_until_complete(asyncio.gather(*self.tasks))

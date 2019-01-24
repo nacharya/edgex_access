@@ -19,7 +19,6 @@ if sys.version_info < (3, 0, 0):
     raise RuntimeError("edgex_access is for Python 3")
 
 HERE = path.abspath(path.dirname(__file__))
-
 VPATH = os.path.join(HERE, 'edgex_access', 'version.py')
 __version__ = eval(open(VPATH).read())
 

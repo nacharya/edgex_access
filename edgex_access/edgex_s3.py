@@ -5,6 +5,7 @@ import os
 import async_timeout
 
 from logzero import logger
+
 from .edgex_exceptions import *
 from .edgex_base import EdgexStoreBase, EdgexAccessBase
 
@@ -77,6 +78,7 @@ class EdgexS3Access(EdgexAccessBase):
                             final_list.append(dlist[-1])
                         else:
                             final_list.append(r_x['Prefix'])
+            logger.debug("s3 list : " + str(len(final_list)) + " items")
             return final_list
 
     async def put(self, session=None):
@@ -98,9 +100,12 @@ class EdgexS3Access(EdgexAccessBase):
                                             endpoint_url=self.obj.store.get_endpoint()) as client:
             try:
                 with async_timeout.timeout(10):
-                    await client.put_object(Bucket=self.obj.bucketname(), \
+                    put_obj = await client.put_object(Bucket=self.obj.bucketname(), \
                                                     Key=self.obj.objname(), \
                                                     Body=self.obj.databuf)
+
+                retcode = put_obj['ResponseMetadata']['HTTPStatusCode']
+                logger.debug("s3 put : " + self.obj.pathname() + " " + str(retcode))
                 return self.obj.pathname()
             except Exception as exp:
                 logger.exception(exp)
@@ -113,6 +118,7 @@ class EdgexS3Access(EdgexAccessBase):
                                             aws_access_key_id=self.obj.store.get_access(), \
                                             endpoint_url=self.obj.store.get_endpoint()) as client:
             try:
+                logger.debug("s3 get : " + self.obj.pathname())
                 with async_timeout.timeout(10):
                     gobj = await client.get_object(Bucket=self.obj.bucketname(),\
                                                    Key=self.obj.objname())
@@ -133,6 +139,7 @@ class EdgexS3Access(EdgexAccessBase):
                 del_obj = await client.delete_object(Bucket=self.obj.bucketname(), \
                                                      Key=self.obj.objname())
                 retcode = del_obj['ResponseMetadata']['HTTPStatusCode']
+                logger.debug("s3 delete : " + self.obj.pathname() + " " + str(retcode))
                 return retcode in (200, 204)
             except Exception as exp:
                 logger.exception(exp)
@@ -148,6 +155,7 @@ class EdgexS3Access(EdgexAccessBase):
                 hd_obj = await client.head_object(Bucket=self.obj.bucketname(),\
                                               Key=self.obj.objname())
                 retcode = hd_obj['ResponseMetadata']['HTTPStatusCode']
+                logger.debug("s3 exists? : " + self.obj.pathname() + " " + str(retcode))
                 return retcode == 200
             except:
                 return False
@@ -162,6 +170,7 @@ class EdgexS3Access(EdgexAccessBase):
                 hd_obj = await client.head_object(Bucket=self.obj.bucketname(),\
                                               Key=self.obj.objname())
                 retcode = hd_obj['ResponseMetadata']['HTTPStatusCode']
+                logger.debug("s3 info : " + self.obj.pathname() + " " + str(retcode))
                 if retcode == 200:
                     return hd_obj['ResponseMetadata']['HTTPHeaders']
                 return None
