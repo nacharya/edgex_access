@@ -5,7 +5,6 @@
 from datetime import datetime
 import os
 import json
-import hashlib
 import random
 
 import asyncio
@@ -18,6 +17,7 @@ from .edgex_base import *
 from .edgex_fs import *
 from .edgex_s3 import *
 from .edgex_mem import *
+from .edgex_meta import *
 from .edgex_goog import *
 
 # import requests-aws4auth
@@ -99,13 +99,20 @@ class EdgexStore:
     def default_bucket(self):
         """ the default bucket """
         return self.store.default_bucket()
-
+    def change_value(self, key, value):
+        """ change the internal config value """
+        return self.store.change_value(key, value)
 
 class EdgexConfig:
     """ Read the main config for the EdgexAccess """
+    file_name = ""
 
-    def __init__(self, cfg_filedata):
-        self.cfg_data = json.loads(cfg_filedata)
+    def __init__(self, cfg_filename):
+        self.prog = "SP3"
+        with open(cfg_filename, "r") as open_cfg:
+            self.cfg_data = json.load(open_cfg)
+
+        self.file_name = cfg_filename
         self.store_dict = {}
         stores = self.cfg_data['stores']
         for st_name in stores:
@@ -123,27 +130,31 @@ class EdgexConfig:
             self.meta = self.cfg_data['META']
 
         # setup the pwd store and the in-memory store
-        store = self.create("pwd", "FS", os.getcwd(), tag="file")
+        store = self.create_store("pwd", "FS", os.getcwd(), tag="file")
         self.add_store("pwd", store)
-        store = self.create("mem", "MEM", str(os.getpid()), tag="mem")
+        store = self.create_store("mem", "MEM", str(os.getpid()), tag="mem")
         self.add_store("MEM", store)
 
     def io_type(self):
         """ whether this is sync or async """
         return self.syncio
 
-    def change_value(self, cfg_filedata, st_name, var_name, var_value):
+    def change_cfg_value(self, key, values):
+        """ edit the key for this config """
+        if len(values) > 0:
+            self.cfg_data[key.upper()] = values[0]
+        else:
+            raise InvalidArgument(key)
+
+    def change_store_value(self, st_name, var_name, var_value):
         """ Change one value in the sore """
-        self.cfg_data = json.loads(cfg_filedata)
-        self.store_dict = {}
         stores = self.cfg_data['stores']
         for sname in stores:
-            if sname == st_name:
-                stcfg = self.store_dict[st_name]
-                stcfg[var_name] = var_value
-        self.save(cfg_filedata)
-
-    def create(self, name, store_type, bucket, \
+            if sname['NAME'] == st_name:
+                stcfg = self.store_dict[sname['NAME']]
+                stcfg.change_value(var_name, var_value)
+                sname[var_name.upper()] = var_value
+    def create_store(self, name, store_type, bucket, \
                access="", secret="", endpoint=None, \
                region="", token="", tag=""):
         """ create a store instance """
@@ -158,11 +169,7 @@ class EdgexConfig:
 
         # optional
         if store_type == 'S3':
-            if not access:
-                raise InvalidArgument(name)
             scfg['ACCESS'] = access
-            if not secret:
-                raise InvalidArgument(name)
             scfg['SECRET'] = secret
 
         # optional
@@ -195,10 +202,25 @@ class EdgexConfig:
     def add_store(self, name, store):
         """ add this store object with a name as a key """
         self.store_dict[name] = store
+        st_obj = {}
+        st_obj['NAME'] = store.get_name()
+        st_obj['STORE_TYPE'] = store.get_type()
+        st_obj['BUCKET'] = store.default_bucket()
+        st_obj["TOKEN"] = ""
+        st_obj["TAG"] = ""
+        if store.get_type() == "S3":
+            st_obj["ACCESS"] = ""
+            st_obj["SECRET"] = ""
+            st_obj["REGION"] = ""
+            st_obj["ENDPOINT"] = ""
+        self.cfg_data['stores'].append(st_obj)
 
     def del_store(self, name):
         """ delete this store object with a name as a key """
         del self.store_dict[name]
+        for k in self.cfg_data['stores']:
+            if k['NAME'] == name:
+                del k
 
     def get_pwd_store(self):
         """ return a store corresponding to the pwd in local store """
@@ -247,12 +269,22 @@ class EdgexConfig:
         logger.info("stores:")
         self.show_stores()
 
-    def save(self, cfg_file):
-        """ save this file as a json file on disk """
-        with open(cfg_file, 'w') as outfile:
-            json.dump(self.cfg_data, outfile, indent=4, sort_keys=True)
-
-
+    def save(self):
+        """ convert to a json format for saving """
+        cfg_obj = {}
+        cfg_obj["PROGRAM"] = self.prog
+        for k in self.cfg_data:
+            cfg_obj[k] = self.cfg_data[k]
+            if k == 'stores':
+                c = 0
+                for st in cfg_obj[k]:
+                    if st['NAME'] == "mem":
+                        del cfg_obj[k][c]
+                    if st['NAME'] == "pwd":
+                        del cfg_obj[k][c]
+                    c += 1
+        with open(self.file_name, 'w') as outfile:
+            json.dump(cfg_obj, outfile, indent=4, sort_keys=True)
 
 class EdgexObjectName:
     """ Only define the name string of the obeject and
@@ -404,6 +436,10 @@ class EdgexObject:
         size_sz = random.choice(ksize)
         self.databuf = os.urandom(size_sz)
 
+    def add_buffer(self, buffer):
+        """ use this as a data buffer ... usually strings .."""
+        self.databuf = buffer
+
 
     def get_store(self):
         """ return the store for this object """
@@ -520,13 +556,12 @@ class EdgexAccess:
 
 class EdgexMeta:
     """ This object is specific to meta data only """
-    def __init__(self, obj):
-        if obj is None:
-            raise InvalidArgument(str(None))
-        self.obj = obj
-    def init_store(self, store_file):
-        """ Initialize the meta store """
-        self.obj.init_store(store_file)
+    def __init__(self, cfg, vdb):
+        """ Initialize """
+        self.obj = EdgexMetaSQLite(cfg, vdb_file=vdb)
+    def init(self):
+        """ Initialize """
+        self.obj.init()
     def put(self, key, value):
         """ put a key value to this meta store """
         self.obj.put(key, value)
@@ -536,9 +571,12 @@ class EdgexMeta:
     def delete(self, key):
         """ delete the  element with this key """
         self.obj.delete(key)
-    def clear_store(self):
+    def show(self):
+        """ display what we have """
+        self.obj.show()
+    def wipe(self):
         """ wipe out the entire store"""
-        self.obj.clear_store()
+        self.obj.deldb()
 
 
 class EdgexDataAccess:
@@ -670,6 +708,26 @@ class EdgexDataAccess:
             logger.exception(exp)
         return None
 
+    async def gend(self, source_name, recursive=False):
+        if not source_name:
+            raise InvalidArgument
+        try:
+            ofile = "MEM://" + str(os.getpid()) + "/genfile"
+            source_obj = EdgexObject(self.cfg, ofile)
+            source_obj.random_buffer()
+            dest_obj = EdgexObject(self.cfg, source_name)
+            source_obj.arg = dest_obj
+            logger.debug(source_obj.pathname())
+            edgex_op = EdgexAccess(source_obj)
+            databuf = await edgex_op.get(self.session)
+            await self.gp_callback(self.session, 'put', source_obj, databuf)
+            # now delete the in-memory object
+            await edgex_op.delete(self.session)
+        except Exception as exp:
+            logger.exception(exp)
+        return None
+
+
     async def cmd_callback(self, cmd, obj, result):
         logger.info(str(result))
 
@@ -691,14 +749,16 @@ class EdgexDataAccess:
             self.tasks.append(self.wget(source_name))
         elif task_name == 'exists':
             self.tasks.append(self.exists(source_name))
+        elif task_name == 'info':
+            self.tasks.append(self.info(source_name))
+        elif task_name == 'delete':
+            self.tasks.append(self.delete(source_name, recursive))
+        elif task_name == 'gend':
+            self.tasks.append(self.gend(source_name, recursive))
         elif task_name == 'put':
             self.tasks.append(self.put(source_name, dest_name, recursive))
         elif task_name == 'get':
             self.tasks.append(self.get(source_name, dest_name, recursive))
-        elif task_name == 'delete':
-            self.tasks.append(self.delete(source_name, recursive))
-        elif task_name == 'info':
-            self.tasks.append(self.info(source_name))
         elif task_name == 'copy':
             self.tasks.append(self.copy(source_name, dest_name, recursive))
         elif task_name == 'move':

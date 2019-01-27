@@ -31,7 +31,9 @@ class EdgexMemAccess(EdgexAccessBase):
         return self.obj.databuf
     async def delete(self, session=None):
         """ delete the entry from in-memory """
-        pass
+        if not self.obj.databuf:
+            raise InvalidDataBuffer(self.obj.pathname())
+        self.obj.databuf = ""
     async def exists(self, session=None):
         """ check of this exists in-memory """
         pass

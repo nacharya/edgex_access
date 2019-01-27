@@ -22,7 +22,10 @@ class EdgexFSStore(EdgexStoreBase):
     def get_endpoint(self):
         """ Get the endpoint """
         return self.basename()
-
+    def change_value(self, key, value):
+        """ change config value """
+        if key.upper() == "TAG":
+            super().set_tag(value)
 
 class EdgexFSAccess(EdgexAccessBase):
     ''' functions for filesystem access '''

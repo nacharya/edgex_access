@@ -19,19 +19,50 @@ class EdgexS3Store(EdgexStoreBase):
         self.secret = cfg['SECRET']
         self.region = cfg['REGION']
         self.endpoint = cfg['ENDPOINT']
+        self.tag = cfg['TAG']
 
     def get_endpoint(self):
         """ return the declared endpoint """
         return self.endpoint
+    def set_endpoint(self, avalue):
+        """ set the endpoint value """
+        self.endpoint = avalue
     def get_region(self):
         """ the default region is needed for AWS """
         return self.region
+    def set_region(self, avalue):
+        """ set the region value """
+        self.region = avalue
     def get_access(self):
         """ The ACCESS value """
         return self.access
+    def set_access(self, avalue):
+        """ set the access value """
+        self.access = avalue
     def get_secret(self):
         """ TheSECRET vaue """
         return self.secret
+    def set_secret(self, avalue):
+        """ set the secret value """
+        self.secret = avalue
+    def get_tag(self):
+        """ TheTAG vaue """
+        return self.tag
+    def set_tag(self, avalue):
+        """ set the tag value """
+        self.tag = avalue
+    def change_value(self, key, value):
+        """ change the config value """
+        if key == "ACCESS":
+            self.set_access(value)
+        if key == "SECRET":
+            self.set_secret(value)
+        if key == "REGION":
+            self.set_region(value)
+        if key == "ENDPOINT":
+            self.set_endpoint(value)
+        if key == "TAG":
+            self.set_tag(value)
 
 class EdgexS3Access(EdgexAccessBase):
     """ S3 protocol access """

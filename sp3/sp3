@@ -2,6 +2,7 @@
 """ S3 access for data """
 import sys
 import os
+import json
 
 from os import path
 from os.path import expanduser
@@ -16,42 +17,132 @@ from logzero import logging
 
 from edgex_access import EdgexConfig
 from edgex_access import EdgexDataAccess
+from edgex_access import EdgexMeta
 
 DEFAULT_CONFIG = "/.sp3"
-SAMPLE_CONFIG = ' \
-{ \
-	"stores" : [ \
-	{ \
-		"NAME" : "edgex", \
-		"STORE_TYPE" :"S3", \
-		"ACCESS" : "", \
-		"SECRET" : "", \
-		"REGION" : "", \
-		"ENDPOINT" : "https://edge.nexenta.com", \
-		"TOKEN" : "", \
-		"SSL" : "False", \
-		"BUCKET" : "", \
-		"TAG" : "edgex" \
-	}, \
-	{ \
-		"NAME" : "ix", \
-		"STORE_TYPE" :"FS", \
-		"TOKEN" : "", \
-		"BUCKET" : "/Users/sample.user/Workspace", \
-		"TAG" : "ix"  \
-	} \
-	], \
-	"PRIMARY" : "edgex", \
-	"SYNCIO" : "QUEUED", \
-	"DEBUG" : 5, \
-    "DATATEST" : "data/", \
-    "META" : "meta/" \
-} \
-'
+SAMPLE_CONFIG = {
+	"stores" : [
+	{
+		"NAME" : "edgex",
+		"STORE_TYPE" :"S3",
+		"ACCESS" : "",
+		"SECRET" : "",
+		"REGION" : "",
+		"ENDPOINT" : "https://edge.nexenta.com",
+		"TOKEN" : "",
+		"SSL" : "False",
+		"BUCKET" : "",
+		"TAG" : "edgex"
+	},
+	{
+		"NAME" : "ix",
+		"STORE_TYPE" :"FS",
+		"TOKEN" : "",
+		"BUCKET" : "/Users/sample.user/Workspace",
+		"TAG" : "ix"
+	}
+	],
+	"PRIMARY" : "edgex",
+	"SYNCIO" : "QUEUED",
+	"DEBUG" : 5,
+    "DATATEST" : "data/",
+    "META" : "meta/"
+}
 
 
+def config_usage():
+    logger.info(sys.argv[0] + "\t--config  [ <ls> <create> <del> ] ...")
 
+def config_cmd(cmd, args):
+    """ commands to configure the utility with the json config """
+    cfg_file = expanduser("~") + DEFAULT_CONFIG
+    if cmd != "create":
+        if not path.exists(cfg_file):
+            logger.error(str("Unable to access " + cfg_file))
+            return
+    try:
+        if cmd == "ls":
+            cfg = EdgexConfig(cfg_file)
+            cfg.show_all()
+        elif cmd == "create":
+            if path.exists(cfg_file):
+                cfg_file_bak = cfg_file + ".bak"
+                os.rename(cfg_file, cfg_file_bak)
+            if not path.exists(cfg_file):
+                with open(cfg_file, "w") as open_cfg:
+                    json.dump(SAMPLE_CONFIG, open_cfg, indent=4, sort_keys=True)
+        elif cmd == "del":
+            if path.exists(cfg_file):
+                cfg_file_bak = cfg_file + ".bak"
+                os.rename(cfg_file, cfg_file_bak)
+                #os.remove(cfg_file)
+        elif cmd == "edit":
+            if not path.exists(cfg_file):
+                logger.error(cfg_file + " not found")
+            cfg = EdgexConfig(cfg_file)
+            cfg.change_cfg_value(args[0], args[1:])
+        else:
+            config_usage()
+    except Exception as exp:
+        logger.exception(exp)
 
+def store_usage():
+    logger.info(sys.argv[0] +"--store\t [ <ls> <create> <del> ] .....")
+
+def store_cmd(cfg, loop, args, r):
+    if len(args) < 1:
+        store_usage()
+        return
+    cfg_file = expanduser("~") + DEFAULT_CONFIG
+    if not path.isfile(cfg_file) or not os.access(cfg_file, os.R_OK):
+        logger.error(str("Unable to access " + cfg_file))
+        return
+    try:
+        if args[0] == "ls":
+            cfg.show_stores()
+        elif args[0] == "create":
+            st_name = args[1]
+            st_type = args[2]
+            st_bucket = args[3]
+            store = cfg.create_store(st_name, st_type, st_bucket)
+            cfg.add_store(st_name, store)
+            cfg.save()
+        elif args[0] == "del":
+            st_name = args[0]
+            cfg.del_store(st_name)
+        elif args[0] == "edit":
+            st_name = args[1]
+            st_key = args[2]
+            st_value = args[3]
+            cfg.change_store_value(st_name,st_key, st_value)
+            cfg.save()
+        else:
+            store_usage()
+    except Exception as exp:
+        logger.exception(exp)
+
+def meta_usage():
+    logger.info(sys.argv[0] + "\t [ <ls> <create> <del> <info> ] ...")
+
+def meta_cmd(cfg, loop, args, r):
+    if len(args) < 1:
+        meta_usage()
+        return
+    try:
+        if args[0] == "ls":
+            logger.info(str(os.listdir(cfg.get_meta_location())))
+        elif args[0] == "create":
+            meta = EdgexMeta(cfg, args[1])
+            meta.init()
+        elif args[0] == "del":
+            meta = EdgexMeta(cfg, args[1])
+            meta.wipe() 
+        elif args[0] == "info":
+            meta = EdgexMeta(cfg, args[1])
+        else:
+            meta_usage()
+    except Exception as exp:
+        logger.exception(exp)
 
 def copy_usage():
     logger.info("copy <source> <dest>")
@@ -102,7 +193,7 @@ def delete_cmd(cfg, loop, args, r):
     logger.info("delete\t" + dest_obj)
     try:
         eda = EdgexDataAccess(cfg, loop)
-        eda.create_task('delete', "", dest_obj, r)
+        eda.create_task('delete', dest_obj, "", r)
         eda.execute(loop)
     except Exception as exp:
         logger.exception(exp)
@@ -121,64 +212,6 @@ def wget_cmd(cfg, loop, args, r):
         eda = EdgexDataAccess(cfg, loop)
         eda.create_task('wget', "", dest_obj, r)
         eda.execute(loop)
-    except Exception as exp:
-        logger.exception(exp)
-
-def config_usage():
-    logger.info(sys.argv[0] + "\t--config  [ <ls> <add> <del> ] ...")
-
-def config_cmd(cfg, loop, args, r):
-    """ commands to configure the utility with the json config """
-    if len(args) < 1:
-        config_usage()
-        return
-    try:
-        if args[0] == "ls":
-            cfg.show_all()
-        elif args[0] == "add":
-            pass
-        elif args[0] == "del":
-            pass
-        else:
-            config_usage()
-    except Exception as exp:
-        logger.exception(exp)
-
-def store_usage():
-    logger.info(sys.argv[0] +"\t [ <ls> <add> <del> ] .....")
-
-def store_cmd(cfg, loop, args, r):
-    if len(args) < 1:
-        store_usage()
-        return
-    try:
-        if args[0] == "ls":
-            cfg.show_stores()
-        elif args[0] == "add":
-            pass
-        elif args[0] == "del":
-            pass
-        else:
-            store_usage()
-    except Exception as exp:
-        logger.exception(exp)
-
-def meta_usage():
-    logger.info(sys.argv[0] + "\t [ <ls> <add> <del> ] ...")
-
-def meta_cmd(cfg, loop, args, r):
-    if len(args) < 1:
-        meta_usage()
-        return
-    try:
-        if args[0] == "ls":
-            pass
-        elif args[0] == "add":
-            pass
-        elif args[0] == "del":
-            pass
-        else:
-            meta_usage()
     except Exception as exp:
         logger.exception(exp)
 
@@ -264,6 +297,22 @@ def put_cmd(cfg, loop, args, r):
     except Exception as exp:
         logger.exception(exp)
 
+def gend_usage():
+    logger.info(sys.argv[0] + "\t gend \t[ store://folder/.../object ] [ store2://folderX/obj2] ")
+
+def gend_cmd(cfg, loop, args, r):
+    if len(args) < 1:
+        gend_usage()
+        return
+    dest_obj = args[0]
+    logger.info("gend\t" + dest_obj)
+    try:
+        eda = EdgexDataAccess(cfg, loop)
+        eda.create_task('gend', dest_obj, "", r)
+        eda.execute(loop)
+    except Exception as exp:
+        logger.exception(exp)
+
 def command(cmd, cfg, loop, args, r):
 
     if cmd == "copy":
@@ -274,8 +323,6 @@ def command(cmd, cfg, loop, args, r):
         delete_cmd(cfg, loop, args, r)
     elif cmd == "wget":
         wget_cmd(cfg, loop, args, r)
-    elif cmd == "config":
-        config_cmd(cfg, loop, args, r)
     elif cmd == "store":
         store_cmd(cfg, loop, args, r)
     elif cmd == "meta":
@@ -290,6 +337,8 @@ def command(cmd, cfg, loop, args, r):
         info_cmd(cfg, loop, args, r)
     elif cmd == "exists":
         exists_cmd(cfg, loop, args, r)
+    elif cmd == "gend":
+        gend_cmd(cfg, loop, args, r)
     else:
         logger.error("Unknown Command " + cmd)
 
@@ -299,10 +348,10 @@ def command(cmd, cfg, loop, args, r):
 def main():
 
     # TODO: location of edgex_access directory for the package
-    HERE = path.abspath(path.dirname(__file__))
-    VPATH = os.path.join(HERE, '../edgex_access', 'version.py')
-    __version__ = eval(open(VPATH).read())
-
+    #HERE = path.abspath(path.dirname(__file__))
+    #VPATH = os.path.join(HERE, '../edgex_access', 'version.py')
+    #__version__ = eval(open(VPATH).read())
+    __version__ = '0.0.14'
 
     parser = argparse.ArgumentParser(
         description="S3/Posix data ls/put/get/delete/copy/move",
@@ -326,6 +375,7 @@ def main():
     parser.add_argument("--config", help="Configure this utility", nargs=argparse.REMAINDER)
     parser.add_argument("--store", help="Create and Show existing stores", nargs=argparse.REMAINDER)
     parser.add_argument("--meta", help="MetaData store configuration", nargs=argparse.REMAINDER)
+    parser.add_argument("--gend", help="Get the URL object", nargs=argparse.REMAINDER)
 
     results = parser.parse_args()
 
@@ -346,17 +396,22 @@ def main():
         formatter = logzero.LogFormatter(fmt=log_format)
         logzero.setup_default_logger(level=logging.INFO, formatter=formatter)
 
-    recursive = results.r
+
+    if results.config is not None:
+        cmd = "config"
+        args = results.config
+        config_cmd(args[0], args[1:])
+        sys.exit(0)
+
 
     cfg_file = expanduser("~") + DEFAULT_CONFIG
     if not path.isfile(cfg_file) or not os.access(cfg_file, os.R_OK):
         logger.error(str("Unable to access " + cfg_file))
         sys.exit(2)
-    with open(cfg_file, mode='r') as c_file:
-        cfg_contents = c_file.read()
-    cfg = EdgexConfig(cfg_contents)
+    cfg = EdgexConfig(cfg_file)
 
 
+    recursive = results.r
     loop = asyncio.get_event_loop()
 
     if results.ls is not None:
@@ -413,12 +468,6 @@ def main():
         command(cmd, cfg, loop, args, recursive)
         sys.exit(0)
 
-    if results.config is not None:
-        cmd = "config"
-        args = results.config
-        command(cmd, cfg, loop, args, recursive)
-        sys.exit(0)
-
     if results.store is not None:
         cmd = "store"
         args = results.store
@@ -428,6 +477,12 @@ def main():
     if results.meta is not None:
         cmd = "meta"
         args = results.meta
+        command(cmd, cfg, loop, args, recursive)
+        sys.exit(0)
+
+    if results.gend is not None:
+        cmd = "gend"
+        args = results.gend
         command(cmd, cfg, loop, args, recursive)
         sys.exit(0)
 

@@ -12,16 +12,18 @@ class EdgexStoreBase:
         #if (self.type != "FS") or (self.type != "S3"):
         #    raise InvalidStore(self.type)
         self.tag = cfg['TAG']
-        if not self.tag:
-            raise EmptyTag(self.tag)
+        #if not self.tag:
+            #raise EmptyTag(self.tag)
 
     def islocal(self):
         """ is this a local filesystem """
         return self.type == "FS"
-
     def get_tag(self):
         """ tag is the short name we use """
         return self.tag
+    def set_tag(self, avalue):
+        """ set tag value """
+        self.tag = avalue
     def get_name(self):
         """ Get the name """
         return self.name
