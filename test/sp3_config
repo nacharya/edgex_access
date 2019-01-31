@@ -1,0 +1,38 @@
+#!/bin/bash
+
+
+sp3 --config del
+sp3 --config create
+sp3 --config ls
+
+# name type bucket
+sp3 --store create minio S3 nabinix
+sp3 --store edit minio access admin
+sp3 --store edit minio secret password
+sp3 --store edit minio region us-east-1
+sp3 --store edit minio endpoint http://127.0.0.1:9000
+sp3 --store edit minio tag minio
+
+#
+sp3 --store create ixl FS /Users/nabin/ixb
+sp3 --store edit ixl tag ixl
+
+mkdir -p meta
+sp3 --meta create m1
+sp3 --meta ls
+sp3 --meta info m1
+sp3 --meta del m1
+rm -rf meta
+
+exit
+
+# run later
+sp3 --store add aws3
+sp3 --store edit aws3 type s3
+sp3 --store edit aws3 access AKIAINWE2N4GEETEVZRA
+sp3 --store edit aws3 secret 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
+sp3 --store edit aws3 region us-east-1
+sp3 --store edit aws3 endpoint http://s3.amazonaws.com
+sp3 --store edit aws3 bucket xenocloud
+sp3 --store edit aws3 tag aws3
+

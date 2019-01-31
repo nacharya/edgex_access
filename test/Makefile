@@ -8,12 +8,12 @@ SP3=sp3
 all: unit_scripts
 
 unit_scripts:
-	$(BASH) sp3_test_config
-	$(BASH) sp3_test_basic_1
-	#$(BASH) sp3_test_basic_2
+	#$(BASH) sp3_config
+	#$(BASH) sp3_basic_1
+	$(BASH) sp3_basic_2
 
 utests:
-	$(PYTHON) test_access.py run pwd
-	$(PYTHON) test_access.py run ix
-	$(PYTHON) test_access.py run minio
+	$(PYTHON) access_1.py
+	$(PYTHON) access_2.py
+	$(PYTHON) access_3.py
 	#$(PYTHON) test_access.py run aws3

@@ -1,0 +1,25 @@
+#!/bin/bash
+
+#sp3 --help
+
+sp3 --ls ixl://stuff/
+sp3 --gend ixl://stuff/genfile
+sp3 --exists ixl://stuff/genfile
+sp3 --info ixl://stuff/genfile
+sp3 --copy ixl://stuff/genfile minio://nabinix/genfile
+sp3 --exists minio://nabinix/genfile
+sp3 --info minio://nabinix/genfile
+sp3 --delete minio://nabinix/genfile
+sp3 --exists minio://nabinix/genfile
+sp3 --delete ixl://stuff/genfile
+sp3 --exists minio://nabinix/genfile
+
+# now for the move test
+
+sp3 --gend ixl://stuff/genfile
+sp3 --exists ixl://stuff/genfile
+sp3 --exists minio://nabinix/genfile
+sp3 --delete minio://nabinix/genfile
+sp3 --exists minio://nabinix/genfile
+
+

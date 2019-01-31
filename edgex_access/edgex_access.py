@@ -9,6 +9,7 @@ import random
 
 import asyncio
 import aiobotocore
+import time
 
 from logzero import logger
 
@@ -376,6 +377,7 @@ class EdgexObject:
     """ defines the main object as defined by the object name """
 
     def __init__(self, cfg, name, store=None):
+        self.is_object = False
         self.cfg = cfg
         # contains the databuffer on one task only. .. not the entire content-length.
         self.databuf = None
@@ -396,6 +398,7 @@ class EdgexObject:
             self.store = cfg.get_store(self.pjname.get_storename())
             if self.store is None:
                 raise InvalidStore(store)
+
         if self.store is None:
             self.store = self.cfg.get_primary_store()
         if not self.bucket_name:
@@ -410,12 +413,19 @@ class EdgexObject:
         #logger.debug(str("OBJECT : " + self.pathname() + "\t" + str(self.datestamp)))
         logger.debug(str("OBJECT : " + self.pathname()))
 
+    def treat_object(self):
+        """ no recursion, just treat this as os an object plain as simple 
+            even if it has the "/" suffix """
+        self.is_object = True
 
     def isfolder(self):
         """ return of the entire object is a folder
             or if the bucket is only there
             or if only the store is listed
         """
+        if self.is_object:
+            return False
+
         if self.store.get_type() == "FS":
             return os.path.isdir(self.pathname())
         if self.obj_name:
@@ -427,7 +437,7 @@ class EdgexObject:
     def islocal(self):
         """ return if this is a local object """
         if self.store == "FS":
-            return os.path.isdir(self.objname)
+            return os.path.isdir(self.pathname())
         return False
 
     def random_buffer(self):
@@ -482,7 +492,7 @@ class EdgexObject:
     def pathname(self):
         """ return the full path name of the object """
         if self.store_type() == "FS":
-            fpath = self.bucket_name + "/" + self.obj_name
+            fpath = self.store.get_endpoint() + "/" + self.bucket_name + "/" + self.obj_name
         elif self.store_type() == "S3":
             fpath = self.store.get_endpoint() + "/" + self.bucket_name + "/" + self.obj_name
         elif self.store_type() == "MEM":
@@ -501,13 +511,10 @@ class EdgexObject:
     # return only the name
     def addchild(self, child):
         """ create a child on this object """
-        if self.store_type() == "FS":
-            objname = "//" + str(self.pathname()) + child
-        elif self.store_type() == "S3":
-            objname = self.basename() + self.objname() + child
-        else:
-            raise InvalidStore(str(self.store_type()))
-        childobj = EdgexObject(self.cfg, objname, store=self.store)
+        objname = self.store.get_name() + "://" + \
+                    self.bucketname() + "/" + self.objname() + \
+                    child
+        childobj = EdgexObject(self.cfg, objname)
         return childobj
 
 
@@ -587,14 +594,36 @@ class EdgexDataAccess:
     def __init__(self, cfg, loop):
         self.cfg = cfg
         self.session = aiobotocore.get_session(loop=loop)
+        self.loop = loop
 
-    async def copy(self, source_name, dest_name, recursive=False):
-        if not source_name or not dest_name:
+    async def copy(self, source_obj, dest_obj, recursive=False):
+        """ Copy one object from one store to another """
+        if not source_obj or not dest_obj:
+            raise InvalidArgument
+        if recursive and source_obj.isfolder() and dest_obj.isfolder():
+            contents = await self.ls(source_obj)
+            logger.info(contents)
+            for item in contents:
+                child_source = source_obj.addchild(item)
+                child_dest = dest_obj.addchild(item)
+                self.tasks.append(await self.copy(child_source, child_dest, \
+                                               child_source.isfolder()))
+        else:
+            try:
+                source_obj.arg = dest_obj
+                edgex_op = EdgexAccess(source_obj)
+                databuf = await edgex_op.get(self.session)
+                await self.gp_callback(self.session, 'get', source_obj, databuf)
+                return True
+            except Exception as exp:
+                logger.exception(exp)
+        return False
+
+    async def wget(self, source_obj):
+        """ Do the wget on a URL """
+        if not source_obj:
             raise InvalidArgument
         try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            dest_obj = EdgexObject(self.cfg, dest_name)
-            source_obj.arg = dest_obj
             edgex_op = EdgexAccess(source_obj)
             databuf = await edgex_op.get(self.session)
             await self.gp_callback(self.session, 'get', source_obj, databuf)
@@ -602,63 +631,58 @@ class EdgexDataAccess:
         except Exception as exp:
             logger.exception(exp)
         return False
-    async def move(self, source_name, dest_name, recursive=False):
-        if not source_name or not dest_name:
+
+    async def delete(self, source_obj, recursive=False, parent_obj=None):
+        """ Delete the object from the store """
+        if not source_obj:
             raise InvalidArgument
+        if source_obj.isfolder():
+            if recursive:
+                contents = await self.ls(source_obj)
+                if len(contents) == 0:
+                    source_obj.treat_object()
+                    self.tasks.append(await self.delete(source_obj, \
+                    #asyncio.ensure_future(await self.delete(source_obj, \
+                                                  recursive=False, \
+                                                  parent_obj=source_obj))
+                for item in contents:
+                    child_source = source_obj.addchild(item)
+                    #asyncio.create_task(self.delete(child_source, \
+                    self.tasks.append(await self.delete(child_source, \
+                    #asyncio.ensure_future(await self.delete(child_source, \
+                                                      child_source.isfolder(), \
+                                                      parent_obj=source_obj))
+        else:
+            try:
+                edgex_op = EdgexAccess(source_obj)
+                deleted = await edgex_op.delete(self.session)
+                await self.cmd_callback('delete', source_obj, deleted)
+            except Exception as exp:
+                logger.exception(exp)
+        if parent_obj:
+            contents = await self.ls(parent_obj)
+            if len(contents) == 0:
+                parent_obj.treat_object()
+                edgex_op = EdgexAccess(parent_obj)
+                deleted = await edgex_op.delete(self.session)
+                await self.cmd_callback('delete', parent_obj, deleted)
+
+    async def ls(self, source_obj):
+        """ List the object or a folder """
         try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            dest_obj = EdgexObject(self.cfg, dest_name)
-            source_obj.arg = dest_obj
-            edgex_op = EdgexAccess(source_obj)
-            databuf = await edgex_op.get(self.session)
-            await self.gp_callback(self.session, 'get', source_obj, databuf)
-            deleted = await edgex_op.delete(self.session)
-            await self.cmd_callback('delete', source_obj, deleted)
-            return True
-        except Exception as exp:
-            logger.exception(exp)
-        return False
-    async def wget(self, source_name):
-        if not source_name:
-            raise InvalidArgument
-        try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            edgex_op = EdgexAccess(source_obj)
-            databuf = await edgex_op.get(self.session)
-            await self.gp_callback(self.session, 'get', source_obj, databuf)
-            return True
-        except Exception as exp:
-            logger.exception(exp)
-        return False
-    async def delete(self, source_name, recursive=False):
-        if not source_name:
-            raise InvalidArgument
-        try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            edgex_op = EdgexAccess(source_obj)
-            deleted = await edgex_op.delete(self.session)
-            await self.cmd_callback('delete', source_obj, deleted)
-            return True
-        except Exception as exp:
-            logger.exception(exp)
-        return False
-    async def ls(self, source_name, recursive=False):
-        try:
-            source_obj = EdgexObject(self.cfg, source_name)
             edgex_op = EdgexAccess(source_obj)
             list_out = await edgex_op.list(self.session)
-            await self.cmd_callback('list', source_obj, list_out)
-            return True
+            contents = await self.cmd_callback('list', source_obj, list_out)
+            return contents
         except Exception as exp:
             logger.exception(exp)
-        return False
-    async def get(self, source_name, dest_name, recursive=False):
-        if not source_name or not dest_name:
+        return []
+
+    async def get(self, source_obj, dest_obj):
+        """ Get the object from the store """
+        if not source_obj or not dest_obj:
             raise InvalidArgument
         try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            dest_obj = EdgexObject(self.cfg, dest_name)
-
             source_obj.arg = dest_obj
             edgex_op = EdgexAccess(source_obj)
             databuf = await edgex_op.get(self.session)
@@ -667,72 +691,78 @@ class EdgexDataAccess:
         except Exception as exp:
             logger.exception(exp)
         return False
-    async def put(self, source_name, dest_name, recursive=False):
-        if not source_name or not dest_name:
+    async def put(self, source_obj, dest_obj):
+        """ put the object into the store """
+        if not source_obj or not dest_obj:
             raise InvalidArgument
         try:
-            source_obj = EdgexObject(self.cfg, source_name)
-            dest_obj = EdgexObject(self.cfg, dest_name)
             source_obj.arg = dest_obj
             edgex_op = EdgexAccess(source_obj)
-            databuf = await edgex_op.get(self.session)
+            databuf = await edgex_op.put(self.session)
             await self.gp_callback(self.session, 'put', source_obj, databuf)
 
         except Exception as exp:
             logger.exception(exp)
         return False
 
-    async def exists(self, source_name, recursive=False):
-        if not source_name:
+    async def exists(self, source_obj):
+        """ Check if this object exists in the store """
+        if not source_obj:
             raise InvalidArgument
         try:
-            edgex_obj = EdgexObject(self.cfg, source_name)
-            edgex_op = EdgexAccess(edgex_obj)
+            edgex_op = EdgexAccess(source_obj)
             is_there = await edgex_op.exists(self.session)
-            await self.cmd_callback('exists', edgex_obj, is_there)
+            await self.cmd_callback('exists', source_obj, is_there)
             return is_there
         except Exception as exp:
             logger.exception(exp)
         return False
 
-    async def info(self, source_name, recursive=False):
-        if not source_name:
+    async def info(self, source_obj):
+        """ Get the metadata for the object as seen by the store """
+        if not source_obj:
             raise InvalidArgument
         try:
-            edgex_obj = EdgexObject(self.cfg, source_name)
-            edgex_op = EdgexAccess(edgex_obj)
+            edgex_op = EdgexAccess(source_obj)
             obj_info = await edgex_op.info(self.session)
-            await self.cmd_callback('info', edgex_obj, obj_info)
+            await self.cmd_callback('info', source_obj, obj_info)
             return obj_info
         except Exception as exp:
             logger.exception(exp)
         return None
 
-    async def gend(self, source_name, recursive=False):
-        if not source_name:
+    async def gend(self, dest_obj):
+        """ artificial random data generation """
+        if not dest_obj:
             raise InvalidArgument
         try:
+            # the genfile part of ofile should be the lastpart of the dest_obj name
             ofile = "MEM://" + str(os.getpid()) + "/genfile"
-            source_obj = EdgexObject(self.cfg, ofile)
-            source_obj.random_buffer()
-            dest_obj = EdgexObject(self.cfg, source_name)
-            source_obj.arg = dest_obj
-            logger.debug(source_obj.pathname())
-            edgex_op = EdgexAccess(source_obj)
+            mem_source_obj = EdgexObject(self.cfg, ofile)
+            mem_source_obj.random_buffer()
+            mem_source_obj.arg = dest_obj
+            edgex_op = EdgexAccess(mem_source_obj)
             databuf = await edgex_op.get(self.session)
-            await self.gp_callback(self.session, 'put', source_obj, databuf)
+            await self.gp_callback(self.session, 'put', mem_source_obj, databuf)
             # now delete the in-memory object
             await edgex_op.delete(self.session)
         except Exception as exp:
             logger.exception(exp)
         return None
 
-
     async def cmd_callback(self, cmd, obj, result):
-        logger.info(str(result))
+        """ single command callback """
+        #logger.info(str(result))
+        if cmd == 'list':
+            return result
+        if not obj:
+            pass
 
     async def gp_callback(self, session, cmd, obj, result):
+        """ get-put callback """
         try:
+            if not cmd:
+                pass
             dest_obj = obj.arg
             dest_obj.databuf = result
             edgex_op = EdgexAccess(dest_obj)
@@ -741,30 +771,53 @@ class EdgexDataAccess:
         except Exception as exp:
             logger.exception(exp)
 
-
     def create_task(self, task_name, source_name, dest_name, recursive=False):
-        if task_name == 'ls':
-            self.tasks.append(self.ls(source_name))
+        """ Create a particular type of task or tasks if recursive """
+        if task_name == 'gend':
+            if recursive:
+                gend_tcount = 60 # total
+                gend_mcount = 10 # modcount
+                mdpath = source_name + "/d0"
+                for i in range(0, gend_tcount):
+                    rfile = mdpath + "/dd" + str(i)
+                    source_obj = EdgexObject(self.cfg, rfile)
+                    self.tasks.append(self.gend(source_obj))
+                    if (i % gend_mcount) == 0 and (i != 0):
+                        mdpath = source_name + "/" + "d" + str(i)
+            else:
+                source_obj = EdgexObject(self.cfg, source_name)
+                self.tasks.append(self.gend(source_obj))
+        elif task_name == 'ls':
+            source_obj = EdgexObject(self.cfg, source_name)
+            self.tasks.append(self.ls(source_obj))
         elif task_name == 'wget':
-            self.tasks.append(self.wget(source_name))
+            source_obj = EdgexObject(self.cfg, source_name)
+            self.tasks.append(self.wget(source_obj))
         elif task_name == 'exists':
-            self.tasks.append(self.exists(source_name))
+            source_obj = EdgexObject(self.cfg, source_name)
+            self.tasks.append(self.exists(source_obj))
         elif task_name == 'info':
-            self.tasks.append(self.info(source_name))
-        elif task_name == 'delete':
-            self.tasks.append(self.delete(source_name, recursive))
-        elif task_name == 'gend':
-            self.tasks.append(self.gend(source_name, recursive))
+            source_obj = EdgexObject(self.cfg, source_name)
+            self.tasks.append(self.info(source_obj))
         elif task_name == 'put':
-            self.tasks.append(self.put(source_name, dest_name, recursive))
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            self.tasks.append(self.put(source_obj, dest_obj))
         elif task_name == 'get':
-            self.tasks.append(self.get(source_name, dest_name, recursive))
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            self.tasks.append(self.get(source_obj, dest_obj))
+        elif task_name == 'delete':
+            source_obj = EdgexObject(self.cfg, source_name)
+            self.tasks.append(self.delete(source_obj, recursive))
         elif task_name == 'copy':
-            self.tasks.append(self.copy(source_name, dest_name, recursive))
-        elif task_name == 'move':
-            self.tasks.append(self.move(source_name, dest_name, recursive))
+            source_obj = EdgexObject(self.cfg, source_name)
+            dest_obj = EdgexObject(self.cfg, dest_name)
+            self.tasks.append(self.copy(source_obj, dest_obj, recursive))
         else:
-            raise InvalidArgument
+            raise InvalidArgument(task_name)
 
-    def execute(self, loop):
-        loop.run_until_complete(asyncio.gather(*self.tasks))
+
+    def execute(self):
+        """ kick off the task list into the event q """
+        self.loop.run_until_complete(asyncio.gather(*self.tasks))

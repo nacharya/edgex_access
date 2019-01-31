@@ -1,0 +1,19 @@
+#!/bin/bash
+
+sp3 -r --gend ixl://stuff/tdata
+sp3 -r --copy ixl://stuff/tdata/ minio://nabinix/tdata/
+sp3 -r --delete ixl://stuff/tdata/
+sp3 -r --delete minio://nabinix/tdata/
+sp3 -r --gend minio://nabinix/tdata
+sp3 -r --delete minio://nabinix/tdata/
+
+exit
+
+#
+sp3 --wget http://wttr.in/index.html
+sp3 --put index.html minio://nabinix/index.html
+rm index.html
+sp3 --get minio://nabinix/index.html pwd://index.html
+rm index.html
+
+

@@ -16,12 +16,16 @@ class EdgexFSStore(EdgexStoreBase):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.cwd = os.getcwd()
+        self.endpoint = cfg['ENDPOINT']
+
     def basename(self):
         """ Get the basename """
         return os.path.basename(self.cwd)
+
     def get_endpoint(self):
         """ Get the endpoint """
-        return self.basename()
+        return self.endpoint
+
     def change_value(self, key, value):
         """ change config value """
         if key.upper() == "TAG":
@@ -34,10 +38,10 @@ class EdgexFSAccess(EdgexAccessBase):
 
     async def list(self, session=None):
         ''' object listing or directory listing '''
+        logger.debug("fs list " + self.obj.pathname())
         final_list = []
         if self.obj.isfolder():
             final_list = os.listdir(self.obj.pathname())
-            print(final_list)
             i = 0
             for f_l in final_list:
                 if os.path.isdir(self.obj.pathname() + "/" + f_l):
@@ -50,6 +54,7 @@ class EdgexFSAccess(EdgexAccessBase):
 
     async def put(self, session=None):
         ''' write out an object '''
+        logger.debug("fs put " + self.obj.pathname())
         isdbuf = (self.obj.databuf is not None)
 
         logger.info(str("put " + self.obj.pathname() + " databuf " + str(isdbuf)))
@@ -75,6 +80,7 @@ class EdgexFSAccess(EdgexAccessBase):
 
     async def get(self, session=None):
         ''' read an object '''
+        logger.debug("fs get " + self.obj.pathname())
         file_size = os.stat(self.obj.pathname()).st_size
         if file_size > MAX_SINGLE_OBJ:
             raise EntityTooLarge(str(file_size))
@@ -85,20 +91,23 @@ class EdgexFSAccess(EdgexAccessBase):
 
     async def delete(self, session=None):
         ''' delete an object '''
+        logger.debug("fs delete " + self.obj.pathname())
         if os.path.isfile(self.obj.pathname()):
             os.remove(self.obj.pathname())
             return True
         if os.path.isdir(self.obj.pathname()):
             dentries = os.listdir(self.obj.pathname())
-            if not dentries:
+            if len(dentries) == 0:
                 os.rmdir(self.obj.pathname())
 
     async def exists(self, session=None):
         ''' check of the file exists '''
+        logger.debug("fs exists " + self.obj.pathname())
         return self.obj.stat()
 
     async def info(self, session=None):
         ''' meta info on the object if any '''
+        logger.debug("fs info " + self.obj.pathname())
         if self.obj.stat() is True:
             metadata = {self.obj.pathname():os.stat(self.obj.pathname())}
             return metadata
