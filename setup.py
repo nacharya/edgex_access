@@ -24,7 +24,7 @@ __version__ = eval(open(VPATH).read())
 
 
 ###################################################################
-LONG_DESCRIPTION = "edgex_access Python library for accessing AWS using the S3 protocol"
+LONG_DESCRIPTION = "edgex_access: a Python library for accessing AWS using the S3 protocol"
 
 # Get the long description from the README file
 with open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
@@ -52,7 +52,7 @@ setup(
     packages=['edgex_access'],
     python_requires='>=3',
     install_requires=['urllib3', 'requests_aws4auth', 'aiobotocore', \
-                      'simplejson', 'lxml', 'asyncio', 'google-cloud-storage'],
+                      'simplejson', 'lxml', 'asyncio'],
     include_package_data=True,
     project_urls={
         'Bug Reports': 'https://github.com/nacharya/edgex_access/issues',

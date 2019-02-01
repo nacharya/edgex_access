@@ -19,7 +19,7 @@ Command Line access to S3 repositories
    :maxdepth: 2
    :caption: Contents:
 
-   s3edgex
+   s3p
    setup
 
 Indices and tables
