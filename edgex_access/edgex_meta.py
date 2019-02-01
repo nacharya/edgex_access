@@ -54,7 +54,7 @@ class EdgexMetaSQLite:
         for key, value in metadict.items():
             print(key, value)
         metadict.close()
-    def init(self):
+    def init_store(self):
         """ Initialize """
         metadict = SqliteDict(self.mname, autocommit=True)
         key = "edgex_meta"
@@ -85,7 +85,7 @@ class EdgexMetaSQLite:
         metadict.commit()
         metadict.close()
 
-    def deldb(self):
+    def clear_store(self):
         """ wipe out the meta db """
         if os.path.isfile(self.mname) is True:
             os.unlink(self.mname)

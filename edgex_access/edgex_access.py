@@ -525,8 +525,9 @@ class EdgexAccess:
     def __init__(self, obj):
         if obj is None:
             raise InvalidArgument(str(None))
-        store_t = obj.store_type()
         self.obj = obj
+
+        store_t = obj.store_type()
         if store_t == "FS":
             self.obj_access = EdgexFSAccess(obj)
         elif store_t == "S3":

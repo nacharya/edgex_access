@@ -9,8 +9,6 @@ class EdgexStoreBase:
         self.type = cfg['STORE_TYPE']
         self.bucket = cfg['BUCKET']
         self.token = cfg['TOKEN']
-        #if (self.type != "FS") or (self.type != "S3"):
-        #    raise InvalidStore(self.type)
         self.tag = cfg['TAG']
         #if not self.tag:
             #raise EmptyTag(self.tag)
@@ -36,14 +34,16 @@ class EdgexStoreBase:
 
 class EdgexMetaBase:
     """ Base class to access the metadata only """
+    state = ""
     def __init__(self):
         self.store_file = ""
     def init_store(self, store_file):
         """ Initialize the meta store if needed """
         self.store_file = store_file
+        self.state = "init"
     def clear_store(self):
         """ remove and delete the meta store """
-        pass
+        self.state = "clear"
 
 class EdgexAccessBase:
     """ Base class to access the I/O type. FS, S3 ,In-Mem etc """
