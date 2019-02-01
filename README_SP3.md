@@ -1,9 +1,9 @@
-## s3p
+## sp3
 
 A simple CLI that uses the edgex_access module for command line access to the S3 stores
 
 - Command line access to s3 web services and POSIX API for file access
-- edgex_access is the Python class used by s3p
+- edgex_access is the Python class used by sp3
 
 
 ```
@@ -46,25 +46,25 @@ Manage data the same way on all data store platforms
 All the basic configuration for sp3 goes into the file ~/.sp3. All of the 
 S3 ACCESS and SECRET resides in this file.
 
-### Example use of s3p for configuration
+### Example use of sp3 for configuration
 
 Let's start with basic configuration 
 
 ```bash
-% s3p --config ls
+% sp3 --config ls
 ```
 
 If a message like "Unable to access /Users/myuser/.sp3"  showed up, let's try to create a 
 new configuration . 
 
 ```bash
-% s3p --config create
+% sp3 --config create
 ```
 
 Now look at the default config
 
 ```bash
-% s3p --config ls
+% sp3 --config ls
 ```
 
 Let's create some stores we can use to place the data objects
@@ -97,24 +97,24 @@ Let's create a local POSIX access store
 % sp3 --store edit ixl tag ixl
 ````
 
-### Example use of s3p for object data transfer
+### Example use of sp3 for object data transfer
 
 Let's upload a file to our primary S3 store
 
 ```bash
-% s3p --put aws_s3://mybucket/file.txt file.txt
+% sp3 --put aws_s3://mybucket/file.txt file.txt
 ```
 
 Now checkif it is there 
 
 ```bash
-% s3p --exists aws_s3://mybucket/file.txt
+% sp3 --exists aws_s3://mybucket/file.txt
 ```
 
 Let's get the file back with a different name
 
 ```bash
-% s3p --get aws_s3://mybucket/file.txt foo.txt
+% sp3 --get aws_s3://mybucket/file.txt foo.txt
 ```
 
 Now make sure the checksums match for both the files
@@ -127,7 +127,7 @@ Now make sure the checksums match for both the files
 Cleanup the files now
 
 ```bash
-% s3p --delete aws_s3://mybucket/file.txt
+% sp3 --delete aws_s3://mybucket/file.txt
 ```
 
 Now let's generate some random data. File sizes are randomly selected between
