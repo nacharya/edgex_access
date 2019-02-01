@@ -14,7 +14,7 @@
 % sp3 --delete -r myhome://photos/cabo/
 ```
 
-Please refer to [README_SP3.md](http://github.com/nacharya/edgex_access/README_SP3.md) for details. 
+Please refer to [README_SP3.md](https://github.com/nacharya/edgex_access/blob/master/README.md) for details. 
 
 ## edgex_access
 
@@ -26,7 +26,7 @@ Please refer to [README_SP3.md](http://github.com/nacharya/edgex_access/README_S
   EdgexConfig, EdgexObject, EdgexDataAccess, EdgexAccess, EdgexHash
   that hides the underlying implemention of S3 and other proprietary access
 
-Please refer to [README_SP3.md](http://github.com/nacharya/edgex_access/README_EDGEX_ACCESS.md) for details. 
+Please refer to [README_SP3.md](https://github.com/nacharya/edgex_access/blob/master/README_EDGEX_ACCESS.md) for details. 
 
 ### Prerequisites & Requirements
 
