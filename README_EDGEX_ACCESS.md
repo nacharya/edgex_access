@@ -65,13 +65,13 @@ buckets = primary_store.list_buckets()
 
 ```
 
-### edgex_object
+### EdgexObject
 
-Each data object in any store is represented as an edgex_object. At the time of 
-the object creation , only the name is used. The edgex_object uses the URI passed in 
+Each data object in any store is represented as an EdgexObject. At the time of 
+the object creation , only the name is used. The EdgexObject uses the URI passed in 
 and checks against the stores to determine which store this object is part of.
 
-edgex_object parses the URI to determine which store and bucket this is a part of
+EdgexObject parses the URI to determine which store and bucket this is a part of
 
 
 ### edgex_access
@@ -99,10 +99,10 @@ session = aiobotocore.get_session(loop=loop)
 
 # define the object
 del_objname = "aws_s3://mybucket/file_foo.txt"
-del_obj = edgex_object(edgex_cfg, del_objname)
+del_obj = EdgexObject(edgex_cfg, del_objname)
 
 # access operation object
-op = edgex_access(del_obj)
+op = EdgexAccess(del_obj)
 
 # make it happen 
 deleted = await op.delete(session)
@@ -126,10 +126,10 @@ session = aiobotocore.get_session(loop=loop)
 
 # define the object
 del_objname = "aws_s3://mybucket/file_foo.txt"
-del_obj = edgex_object(edgex_cfg, del_objname)
+del_obj = EdgexObject(edgex_cfg, del_objname)
 
 # access operation object
-op = edgex_access(del_obj)
+op = EdgexAccess(del_obj)
 
 # make it happen 
 info = await op.info(session)
@@ -179,9 +179,9 @@ def get_callback(session, obj, databuf):
 # start of the get operation 
 
 get_objname = "aws_s3://mybucket/file_foo.txt"
-get_obj = edgex_object(edgex_cfg, del_objname)
+get_obj = EdgexObject(edgex_cfg, del_objname)
 
-op = edgex_access(source_obj)
+op = EdgexAccess(source_obj)
 databuf = await op.get(session)
 await get_callback(session, source_obj, databuf)
 
