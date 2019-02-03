@@ -172,7 +172,7 @@ def put_callback(obj, result):
 def get_callback(session, obj, databuf):
     target_object = obj.arg
     target_object.databuf = databuf
-    op = edgex_access(target_obj, logger)
+    op = EdgexAccess(target_obj, logger)
     put_obj = await op.put(session)
     await put_callback(dest_obj, put_obj)
 
@@ -193,4 +193,12 @@ is retrieved and placed locally to the desired location using the
 
 edgex_access is currently in development. Some of the features are missing and there are bugs 
 Please refer to the 'Development Status" below.
+
+### Development Status
+
+- Most of the code for the API of edgex_access is defined and available. 
+- A lot of tests will have to added in the fiture
+- Most of the S3 I/O has been tested with Minio, AWS S3 and NexentaEdge
+- If you see real issues while using edgex_access and sp3 , please do let us know
+
 
