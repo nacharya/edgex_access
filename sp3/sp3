@@ -197,23 +197,6 @@ def delete_cmd(cfg, loop, args, r):
         eda.execute()
     except Exception as exp:
         logger.exception(exp)
-    
-def wget_usage():
-    logger.info("wget <url>")
-    logger.info("e.g.\t % sd3 --wget http://google.com/file1")
-
-def wget_cmd(cfg, loop, args, r):
-    if len(args) < 1:
-        wget_usage()
-        return
-    dest_obj = args[0]
-    logger.info("wget\t" + dest_obj)
-    try:
-        eda = EdgexDataAccess(cfg, loop)
-        eda.create_task('wget', "", dest_obj, r)
-        eda.execute()
-    except Exception as exp:
-        logger.exception(exp)
 
 def ls_usage():
     logger.info(sys.argv[0] + "\t ls \t [ store://folder/.../object ]")
@@ -322,8 +305,6 @@ def command(cmd, cfg, loop, args, r):
         move_cmd(cfg, loop, args, r)
     elif cmd == "delete":
         delete_cmd(cfg, loop, args, r)
-    elif cmd == "wget":
-        wget_cmd(cfg, loop, args, r)
     elif cmd == "store":
         store_cmd(cfg, loop, args, r)
     elif cmd == "meta":
@@ -371,7 +352,6 @@ def main():
 
     parser.add_argument("--copy", help="Copy one object or folder to another store", nargs=argparse.REMAINDER)
     parser.add_argument("--move", help="Move this object or folder to another store", nargs=argparse.REMAINDER)
-    parser.add_argument("--wget", help="Get the URL object", nargs=argparse.REMAINDER)
 
     parser.add_argument("--config", help="Configure this utility", nargs=argparse.REMAINDER)
     parser.add_argument("--store", help="Create and Show existing stores", nargs=argparse.REMAINDER)
@@ -460,12 +440,6 @@ def main():
     if results.move is not None:
         cmd = "move"
         args = results.move
-        command(cmd, cfg, loop, args, recursive)
-        sys.exit(0)
-
-    if results.wget is not None:
-        cmd = "wget"
-        args = results.wget
         command(cmd, cfg, loop, args, recursive)
         sys.exit(0)
 

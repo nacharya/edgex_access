@@ -620,19 +620,6 @@ class EdgexDataAccess:
                 logger.exception(exp)
         return False
 
-    async def wget(self, source_obj):
-        """ Do the wget on a URL """
-        if not source_obj:
-            raise InvalidArgument
-        try:
-            edgex_op = EdgexAccess(source_obj)
-            databuf = await edgex_op.get(self.session)
-            await self.gp_callback(self.session, 'get', source_obj, databuf)
-            return True
-        except Exception as exp:
-            logger.exception(exp)
-        return False
-
     async def delete(self, source_obj, recursive=False, parent_obj=None):
         """ Delete the object from the store """
         if not source_obj:
@@ -791,9 +778,6 @@ class EdgexDataAccess:
         elif task_name == 'ls':
             source_obj = EdgexObject(self.cfg, source_name)
             self.tasks.append(self.ls(source_obj))
-        elif task_name == 'wget':
-            source_obj = EdgexObject(self.cfg, source_name)
-            self.tasks.append(self.wget(source_obj))
         elif task_name == 'exists':
             source_obj = EdgexObject(self.cfg, source_name)
             self.tasks.append(self.exists(source_obj))

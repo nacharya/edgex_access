@@ -9,7 +9,7 @@ A simple CLI that uses the edgex_access module for command line access to the S3
 ```
 usage: sp3 [-h] [-d DEBUG] [-r] [--version] [--ls ...] [--exists ...]
            [--info ...] [--put ...] [--get ...] [--delete ...] [--copy ...]
-           [--move ...] [--wget ...] [--config ...] [--store ...] [--meta ...]
+           [--move ...] [--config ...] [--store ...] [--meta ...]
            [--gend ...] [--test ...]
 
 S3/Posix data ls/put/get/delete/copy/move
@@ -28,7 +28,6 @@ optional arguments:
   --delete ...          Remove this object or the folder
   --copy ...            Copy one object or folder to another store
   --move ...            Move this object or folder to another store
-  --wget ...            Get the URL object
   --config ...          Configure this utility
   --store ...           Create and Show existing stores
   --meta ...            MetaData store configuration
