@@ -131,9 +131,13 @@ class EdgexConfig:
             self.meta = self.cfg_data['META']
 
         # setup the pwd store and the in-memory store
-        store = self.create_store("pwd", "FS", os.getcwd(), tag="file")
+        pname = os.getcwd().split("/")
+        ep = "/".join(pname[0:-2])
+        store = self.create_store("pwd", "FS", pname[-1], endpoint=ep, tag="pwd")
         self.add_store("pwd", store)
-        store = self.create_store("mem", "MEM", str(os.getpid()), tag="mem")
+        ep ="/sqlite/"
+        store = self.create_store("mem", "MEM", str(os.getpid()), \
+                                  endpoint=ep, tag="mem")
         self.add_store("MEM", store)
 
     def io_type(self):
@@ -155,6 +159,7 @@ class EdgexConfig:
                 stcfg = self.store_dict[sname['NAME']]
                 stcfg.change_value(var_name, var_value)
                 sname[var_name.upper()] = var_value
+
     def create_store(self, name, store_type, bucket, \
                access="", secret="", endpoint=None, \
                region="", token="", tag=""):
@@ -178,6 +183,7 @@ class EdgexConfig:
         scfg['REGION'] = region
         scfg['TOKEN'] = token
         scfg['TAG'] = tag
+        
 
         # jcfg = json.dumps(scfg)
         if store_type == "FS":
@@ -207,6 +213,7 @@ class EdgexConfig:
         st_obj['NAME'] = store.get_name()
         st_obj['STORE_TYPE'] = store.get_type()
         st_obj['BUCKET'] = store.default_bucket()
+        st_obj['ENDPOINT'] = store.get_endpoint()
         st_obj["TOKEN"] = ""
         st_obj["TAG"] = ""
         if store.get_type() == "S3":
@@ -569,7 +576,7 @@ class EdgexMeta:
         self.obj = EdgexMetaSQLite(cfg, vdb_file=vdb)
     def init(self):
         """ Initialize """
-        self.obj.init()
+        self.obj.init_store()
     def put(self, key, value):
         """ put a key value to this meta store """
         self.obj.put(key, value)
@@ -584,7 +591,7 @@ class EdgexMeta:
         self.obj.show()
     def wipe(self):
         """ wipe out the entire store"""
-        self.obj.deldb()
+        self.obj.clean_store()
 
 
 class EdgexDataAccess:

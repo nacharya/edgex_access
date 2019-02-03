@@ -38,8 +38,9 @@ SAMPLE_CONFIG = {
 		"NAME" : "ix",
 		"STORE_TYPE" :"FS",
 		"TOKEN" : "",
-		"BUCKET" : "/Users/sample.user/Workspace",
-		"TAG" : "ix"
+		"BUCKET" : "stuff",
+		"TAG" : "ix",
+        "ENDPOINT" : "/Users/sample.user/Workspace"
 	}
 	],
 	"PRIMARY" : "edgex",

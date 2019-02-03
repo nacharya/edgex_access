@@ -85,7 +85,7 @@ class EdgexMetaSQLite:
         metadict.commit()
         metadict.close()
 
-    def clear_store(self):
+    def clean_store(self):
         """ wipe out the meta db """
         if os.path.isfile(self.mname) is True:
             os.unlink(self.mname)

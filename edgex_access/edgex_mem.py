@@ -10,14 +10,19 @@ class EdgexMemStore(EdgexStoreBase):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.bucketname = cfg['BUCKET']
+        self.endpoint = cfg['ENDPOINT']
     def get_bucketname(self):
         """ the mem space is denoted by a bucket name """
         return self.bucketname
+    def get_endpoint(self):
+        """ get the endpoint """
+        return self.endpoint
 
 class EdgexMemAccess(EdgexAccessBase):
     """ In-memory access """
     def __init__(self, obj):
         super().__init__(obj, "MEM")
+
     async def list(self, session=None):
         """ List the element in-memory """
         pass

@@ -1,9 +1,11 @@
 #!/bin/bash
 
+rm ~/.sp3
 
 sp3 --config del
 sp3 --config create
 sp3 --config ls
+
 
 # name type bucket
 sp3 --store create minio S3 nabinix
@@ -14,7 +16,8 @@ sp3 --store edit minio endpoint http://127.0.0.1:9000
 sp3 --store edit minio tag minio
 
 #
-sp3 --store create ixl FS /Users/nabin/ixb
+sp3 --store create ixl FS stuff
+sp3 --store edit ixl endpoint /Users/nabin/ixb
 sp3 --store edit ixl tag ixl
 
 mkdir -p meta
