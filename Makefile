@@ -32,11 +32,11 @@ clean:
 	rm -f *.log
 
 req:
-	pip freeze > $(REQ)
-	$(PYTHON) -m pip install setuptools wheel twine
+	pip3 freeze > $(REQ)
+	$(PYTHON) -m pip3 install setuptools wheel twine
 
 init:
-	pip install -r requirements.txt
+	pip3 install -r requirements.txt
 
 build: $(SOURCES) $(SETUP) req
 	$(PYTHON) $(SETUP) build
@@ -44,13 +44,13 @@ build: $(SOURCES) $(SETUP) req
 
 # dev version only
 installd:
-	pip install .
+	pip3 install .
 
 install: $(SOURCES) $(SETUP)
 	$(PYTHON) $(SETUP) install
 
 uninstall:
-	pip uninstall -y $(MODULE)
+	pip3 uninstall -y $(MODULE)
 
 register: $(SETUP) 
 	echo "twine upload dist/*"

@@ -8,7 +8,6 @@ See:
 
 import sys
 import os
-
 import os.path as path
 
 from setuptools import setup
@@ -21,7 +20,6 @@ if sys.version_info < (3, 0, 0):
 HERE = path.abspath(path.dirname(__file__))
 VPATH = os.path.join(HERE, 'edgex_access', 'version.py')
 __version__ = eval(open(VPATH).read())
-
 
 ###################################################################
 LONG_DESCRIPTION = "edgex_access: a Python library for accessing AWS using the S3 protocol"
@@ -52,7 +50,9 @@ setup(
     packages=['edgex_access'],
     python_requires='>=3',
     install_requires=['urllib3', 'requests_aws4auth', 'aiobotocore', \
-                      'simplejson', 'lxml', 'asyncio'],
+                      'simplejson', 'lxml', 'asyncio', 'azure-storage-blob' \
+                      'aiogoogle' \
+                     ],
     include_package_data=True,
     project_urls={
         'Bug Reports': 'https://github.com/nacharya/edgex_access/issues',

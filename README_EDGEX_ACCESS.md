@@ -4,7 +4,7 @@
 ## What is edgex_access
 
 A Python3 connector library that uses the AWS S3 protocol to access data storage 
-solutions like AWS S3, NexentaEdge, Minio, Scality Zenko and Cloudian S3
+solutions like AWS S3, Minio and Azure BlobStore
 
 - S3 configuration for more than one S3 store
 - signature computation based on configuration
@@ -20,7 +20,7 @@ Just to get you up and running on your local machine for development and testing
 Install the edgex_access Python3 module
 
 ```bash
-% pip install edgex_access
+% pip3 install edgex_access
 ```
 
 This package comes with a utility called "sp3" described below.

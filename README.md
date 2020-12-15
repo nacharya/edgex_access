@@ -3,18 +3,23 @@
 ## sp3
 
 - Access to AWS S3 using Python3 
-- S3 configuration for multiple S3 stores like minio, zenko, cloudian and nexentaedge
-- Very simple to use as a CLI 
+- S3 configuration for multiple S3 stores like AWS S3 and  Minio
+- Configuration for Azure Blobstore
+- Very simple to use as a CLI for local directory and remote file store
 
+
+Copy files recursively from a local directory to a AWS S3 bucket path
 ```bash
 % sp3 --copy -r myhome://photos/cabo/ aws3://photos/cabo
 ```
 
+Delete a local directory recursively
 ```bash
 % sp3 --delete -r myhome://photos/cabo/
 ```
 
-Please refer to [README_SP3.md](https://github.com/nacharya/edgex_access/blob/master/README_SP3.md) for details. 
+Please refer to [README_SP3.md](https://github.com/nacharya/edgex_access/blob/master/README_SP3.md) for 
+and cmdline `sp3` and all the command line options. 
 
 ## edgex_access
 
@@ -43,7 +48,7 @@ that should be pre-installed before edgex_access and s3p can be used.
 ### Installation 
 
 ```bash
-% pip install edgex_access
+% pip3 install edgex_access
 ```
 
 ### Coding Style
@@ -63,3 +68,7 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 * Thanks to dyusupov
 
+## History
+
+This project was done as a test application when developing a highly scalable objectstore called NexentaEdge
+It used to be available at an Open Source project called edgefs.io

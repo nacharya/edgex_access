@@ -41,7 +41,14 @@ SAMPLE_CONFIG = {
 		"BUCKET" : "stuff",
 		"TAG" : "ix",
         "ENDPOINT" : "/Users/sample.user/Workspace"
-	}
+	},
+    {
+        "NAME" : "az",
+        "STORE_TYPE" : "AZ",
+        "CRED" : "",
+        "REGION" : "",
+        "ENDPOINT" : "",
+        "TAG" : "az"
 	],
 	"PRIMARY" : "edgex",
 	"SYNCIO" : "QUEUED",
